@@ -8,7 +8,7 @@ import time
 
 class PlainRNNDataHandler:
     
-    def __init__(self, dataset_path, batch_size, test_log):
+    def __init__(self, dataset_path, batch_size, log_file):
         self.dataset_path = dataset_path
         self.batch_size = batch_size
         if len(dataset_path) > 0:
@@ -27,11 +27,11 @@ class PlainRNNDataHandler:
                 raise Exception("""Testset and trainset have different 
                         amount of users.""")
 
+            # LOG
+            self.log_file = log_file
+            logging.basicConfig(filename=log_file,level=logging.DEBUG)
+
             self.reset_user_batch_data()
-
-        self.test_log = test_log
-        logging.basicConfig(filename=test_log,level=logging.DEBUG)
-
 
     # call before training and testing
     def reset_user_batch_data(self):
@@ -45,11 +45,13 @@ class PlainRNNDataHandler:
             # everyone has at least one session
             self.users_with_remaining_sessions.append(k)
 
+    def get_N_highest_indexes(a,N):
+        return np.argsort(a)[::-1][:N]
 
     def add_unique_items_to_dict(self, items, dataset):
-        for k, v in dataset.items():    # key: user id, value: list of sessions
-            for session in v:       # each session contains a list of events
-                for event in session:   # each event contains two values, don't know what
+        for k, v in dataset.items():
+            for session in v:
+                for event in session:
                     item = event[1]
                     if item not in items:
                         items[item] = True
@@ -79,10 +81,6 @@ class PlainRNNDataHandler:
 
     def get_num_test_batches(self):
         return self.get_num_batches(self.testset)
-
-    def get_N_highest_indexes(a,N):
-        return np.argsort(a)[::-1][:N]
-
     
     def get_next_batch(self, dataset, dataset_session_lengths):
         session_batch = []
@@ -94,11 +92,13 @@ class PlainRNNDataHandler:
             user = self.users_with_remaining_sessions[i]
             remaining_sessions[i] = len(dataset[user]) - self.user_next_session_to_retrieve[user]
         
-        # index of users to get    # gets the index of the <batch_size> users with the most remaining sessions
+        # index of users to get
         user_list = PlainRNNDataHandler.get_N_highest_indexes(remaining_sessions, self.batch_size)
+        if(len(user_list) == 0):
+            return [],[],[]
         for i in range(len(user_list)):
             user_list[i] = self.users_with_remaining_sessions[user_list[i]]
-
+        
         # For each user -> get the next session, and check if we should remove 
         # him from the list of users with remaining sessions
         for user in user_list:
@@ -109,20 +109,11 @@ class PlainRNNDataHandler:
             if self.user_next_session_to_retrieve[user] >= len(dataset[user]):
                 # User have no more session, remove him from users_with_remaining_sessions
                 self.users_with_remaining_sessions.remove(user)
-        if len(user_list) == 0:
-            return [], [], []
 
         session_batch = [[event[1] for event in session] for session in session_batch]
-        input_values = [session[:-1] for session in session_batch]
-        target_values = [session[1:] for session in session_batch]
-
-        if len(input_values) < self.batch_size:
-            for i in range(self.batch_size-len(input_values)):
-                input_values.append([0]*len(input_values[0]))
-                target_values.append([0]*len(target_values[0]))
-                session_lengths.append(0)
-
-        return input_values, target_values, session_lengths
+        x = [session[:-1] for session in session_batch]
+        y = [session[1:] for session in session_batch]
+        return x, y, session_lengths
 
     def get_next_train_batch(self):
         return self.get_next_batch(self.trainset, self.train_session_lengths)
