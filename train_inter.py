@@ -2,7 +2,7 @@ import datetime
 import os
 import time
 import numpy as np
-from models_inter import InterRNN, IntraRNN
+from models_baselines import InterRNN, IntraRNN
 from datahandler_inter import IIRNNDataHandler
 from test_util import Tester
 
@@ -17,7 +17,7 @@ from tensorboard import Logger as TensorBoard
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm"
-dataset = lastfm
+dataset = reddit
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
 use_last_hidden_state = False
@@ -55,7 +55,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 2
+BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data

@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 class InterRNN(nn.Module):
@@ -24,7 +25,7 @@ class InterRNN(nn.Module):
         hidden_out = hidden_out.squeeze()
         hidden_out = hidden_out.unsqueeze(0)
         hidden_out = self.dropout2(hidden_out)
-        return hidden_out
+        return output, hidden_out
 
     # initialize hidden with variable batch size
     def init_hidden(self, batch_size, use_cuda):
@@ -41,30 +42,36 @@ class IntraRNN(nn.Module):
         self.n_layers = n_layers
 
         self.embedding = nn.Embedding(n_items, embedding_size)
-        self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1,1))
+        self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
         self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
         self.gru = nn.GRU(embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
         self.linear = nn.Linear(embedding_size, n_items)
 
-    def forward(self, input, hidden, session_lengths):
+        self.attn = nn.Linear(self.hidden_size * 2, 19)
+        self.attn_combine = nn.Linear(self.hidden_size * 2, hidden_size)
+        self.sss = nn.Softmax()
+
+
+    def forward(self, input, hidden, inter_output):
         embedded_input = self.embedding(input)
         embedded_input = self.dropout1(embedded_input)
-        gru_output, hidden = self.gru(embedded_input, hidden)
+        
+        a = torch.cat((embedded_input, hidden.transpose(0, 1)), 2)
+        b = self.attn(a)
+        attn_weights = self.sss(b.squeeze()).unsqueeze(1)
+        attn_applied = torch.bmm(attn_weights, inter_output)
+        output = torch.cat((embedded_input, attn_applied), 2)
+        output = self.attn_combine(output)
+        
+
+        #output = F.relu(output)
+        gru_output, hidden = self.gru(output, hidden)
+        #gru_output, hidden = self.gru(embedded_input, hidden)
         output = self.dropout2(gru_output)
         output = self.linear(output)
-
-        last_index_of_sessions = session_lengths - 1
-        hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(gru_output.size(0), 1, gru_output.size(2))
-        hidden_out = torch.gather(gru_output, 1, hidden_indices)
-        hidden_out = hidden_out.squeeze()
-        hidden_out = hidden_out.unsqueeze(0)
-
-        sum_x = embedded_input.sum(1)
-        mean_x = sum_x.div(session_lengths.float())
-        
-        return output, hidden_out, mean_x
+        return output, hidden, embedded_input, gru_output
 
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
