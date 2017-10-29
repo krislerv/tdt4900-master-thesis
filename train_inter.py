@@ -17,7 +17,7 @@ from tensorboard import Logger as TensorBoard
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm"
-dataset = reddit
+dataset = lastfm
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
 use_last_hidden_state = False
@@ -55,7 +55,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 100
+BATCH_SIZE    = 2
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data

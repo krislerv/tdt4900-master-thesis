@@ -40,6 +40,7 @@ class IntraRNN(nn.Module):
 
         self.hidden_size = hidden_size
         self.n_layers = n_layers
+        self.embedding_size = embedding_size
 
         self.embedding = nn.Embedding(n_items, embedding_size)
         self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
@@ -49,26 +50,62 @@ class IntraRNN(nn.Module):
         self.dropout2 = nn.Dropout(p=dropout)
         self.linear = nn.Linear(embedding_size, n_items)
 
-        self.attn = nn.Linear(self.hidden_size * 2, 19)
+        self.attn = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.attn_combine = nn.Linear(self.hidden_size * 2, hidden_size)
         self.sss = nn.Softmax()
+
+        self.v = nn.Parameter(torch.FloatTensor(1, hidden_size))
+        self.v.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
 
 
     def forward(self, input, hidden, inter_output):
         embedded_input = self.embedding(input)
         embedded_input = self.dropout1(embedded_input)
+
+        print(embedded_input.size())
+
         
+        attention_weights = []
+
+        for i in range(inter_output.size(1)):
+            a = Variable(torch.LongTensor([i]).expand(inter_output.size(0), 1, self.embedding_size))
+            a = a.cuda()
+            b = torch.gather(inter_output, 1, a)
+
+            #nn = torch.tanh(b + hidden.transpose(0, 1))
+            nn = torch.tanh(self.attn(torch.cat((b, hidden.transpose(0, 1)), 2)))
+
+            nn = self.v.expand(2, 1, 100)*nn
+
+            nn = nn.sum(2)
+
+            if i == 0:
+                attention_weights = nn
+            else:
+                attention_weights = torch.cat((attention_weights, nn), 1)
+        attention_weights = F.softmax(attention_weights)
+
+        attn_applied = attention_weights.unsqueeze(2)*inter_output
+        context_vector = attn_applied.sum(1).unsqueeze(1)
+
+        #embedded_input = embedded_input + context_vector
+        embedded_input = self.attn_combine(torch.cat((embedded_input, context_vector), 2))
+        
+        
+
+        """
         a = torch.cat((embedded_input, hidden.transpose(0, 1)), 2)
         b = self.attn(a)
         attn_weights = self.sss(b.squeeze()).unsqueeze(1)
         attn_applied = torch.bmm(attn_weights, inter_output)
         output = torch.cat((embedded_input, attn_applied), 2)
         output = self.attn_combine(output)
-        
-
         #output = F.relu(output)
         gru_output, hidden = self.gru(output, hidden)
-        #gru_output, hidden = self.gru(embedded_input, hidden)
+        """
+        
+
+        gru_output, hidden = self.gru(embedded_input, hidden)
         output = self.dropout2(gru_output)
         output = self.linear(output)
         return output, hidden, embedded_input, gru_output

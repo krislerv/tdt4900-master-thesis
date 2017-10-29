@@ -110,14 +110,6 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
     inter_output, inter_hidden = inter_rnn(session_reps, inter_hidden, inter_session_seq_length)
 
-    # pad back inter_output
-    longest_sequence = inter_output.size(1)
-    pad_amount = 19 - longest_sequence
-    pad = Variable(torch.zeros(inter_output.size(0), pad_amount, EMBEDDING_SIZE))
-    if use_cuda:
-        pad = pad.cuda()
-    inter_output = torch.cat((inter_output, pad), 1)
-    
     loss = 0
 
     # call forward on intra gru layer with hidden state from inter
@@ -181,31 +173,38 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length):
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
     inter_output, inter_hidden = inter_rnn(session_reps, inter_hidden, inter_session_seq_length)
 
-    # pad back inter_output
-    
-    longest_sequence = inter_output.size(1)
-    pad_amount = 19 - longest_sequence
-    pad = Variable(torch.zeros(inter_output.size(0), pad_amount, EMBEDDING_SIZE))
-    if use_cuda:
-        pad = pad.cuda()
-    inter_output = torch.cat((inter_output, pad), 1)
-    
-
     intra_hidden = inter_hidden
     for i in range(19):
         b = torch.LongTensor([i]).expand(BATCH_SIZE, 1)
         if use_cuda:
             b = b.cuda()
         c = torch.gather(input, 1, b)
-        out, intra_hidden, _, _ = intra_rnn(c, intra_hidden, inter_output)
+        out, intra_hidden, embedded_input, gru = intra_rnn(c, intra_hidden, inter_output)
         if i == 0:
             output = out
+            gru_output = gru
+            cat_embedded_input = embedded_input
         else:
             output = torch.cat((output, out), 1)
+            gru_output = torch.cat((gru_output, gru), 1)
+            cat_embedded_input = torch.cat((cat_embedded_input, embedded_input), 1)
+
+    # get last hidden states for session representations
+    last_index_of_sessions = session_lengths - 1
+    hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(gru_output.size(0), 1, gru_output.size(2))
+    hidden_out = torch.gather(gru_output, 1, hidden_indices)
+    hidden_out = hidden_out.squeeze()
+    hidden_out = hidden_out.unsqueeze(0)
+
+    # get average pooling of input for session representations
+    sum_x = cat_embedded_input.sum(1)
+    mean_x = sum_x.div(session_lengths.float())
 
     top_k_values, top_k_predictions = torch.topk(output, TOP_K)
 
-    return top_k_predictions
+    if use_last_hidden_state:
+        return top_k_predictions, hidden_out.data[0]
+    return top_k_predictions, mean_x.data
 
 #CUSTOM CROSS ENTROPY LOSS(Replace as soon as pytorch has implemented an option for non-summed losses)
 #https://github.com/pytorch/pytorch/issues/264
@@ -290,8 +289,8 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
         _batch_number += 1
 
-        batch_predictions = predict(xinput, sl, session_reps, inter_session_seq_length)
-        
+        batch_predictions, _ = predict(xinput, sl, session_reps, inter_session_seq_length)
+
         # Evaluate predictions
         tester.evaluate_batch(batch_predictions, targetvalues, sl)
 
