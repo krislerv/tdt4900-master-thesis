@@ -35,9 +35,32 @@ class IIRNNDataHandler:
         # LOG
         self.log_file = log_file
         logging.basicConfig(filename=log_file,level=logging.DEBUG)
+
+        """
+        for k, v in self.trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+            print(v)
+            times = []
+            for session_index in range(1,len(v)):
+                gap = (self.trainset[k][session_index][0][0]-self.trainset[k][session_index-1][0][0])/3600
+                #print(self.trainset[k][session_index])
+                times.append(gap)
+            gap = (self.testset[k][0][0][0]-self.trainset[k][len(v)-1][0][0])/3600
+            times.append(gap)
+            #self.update_gap_range(gap)
+            #self.user_train_times[k] = times
+        """
     
         # batch control
         self.reset_user_batch_data()
+
+    """
+    Returns the unix time for a given event in the last session processed for the given user
+    event_id: The id of the event in the last session
+    user_id: The user to retrieve event for
+    """
+    def get_event_time_of_last_session_for_given_user(self, event_id, user_id):
+        return self.trainset[user_id][self.user_next_session_to_retrieve[user_id] - 1][event_id][0]
+
 
     # call before training and testing
     def reset_user_batch_data(self):

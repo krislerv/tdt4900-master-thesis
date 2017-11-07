@@ -1,4 +1,3 @@
-
 class Tester:
 
     def __init__(self, k=[5, 10, 20]):
@@ -20,7 +19,9 @@ class Tester:
         raise Exception("could not find target in sequence")
 
     def evaluate_sequence(self, predicted_sequence, target_sequence, seq_len):
+        results = []
         for i in range(seq_len):
+            results.append(0)
             target_item = target_sequence[i]
             k_predictions = predicted_sequence[i]
 
@@ -30,15 +31,20 @@ class Tester:
                     self.recall[i][j] += 1
                     inv_rank = 1.0/self.get_rank(target_item, k_predictions[:k].data)
                     self.mrr[i][j] += inv_rank
+                    if results[i] == 0:
+                        results[i] = k
 
             self.i_count[i] += 1
+        return results
 
 
     def evaluate_batch(self, predictions, targets, sequence_lengths):
+        prediction_results = []
         for batch_index in range(len(predictions)):
             predicted_sequence = predictions[batch_index]
             target_sequence = targets[batch_index]
-            self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index])
+            prediction_results.append(self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index]))
+        return prediction_results
     
     def format_score_string(self, score_type, score):
         tabs = '\t'
