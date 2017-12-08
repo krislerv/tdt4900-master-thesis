@@ -7,6 +7,8 @@ runtime = time.time()
 reddit = "subreddit"
 lastfm = "lastfm-new"
 
+create_lastfm_cet = False
+
 dataset = reddit
 
 home = os.path.expanduser('~')
@@ -84,11 +86,10 @@ cet = [
 
 def convert_timestamps_lastfm():
     last_user_id = ""
-    skipperino = False
+    skip_country = False
     dataset_list = []
     num_skipped = 0
     count = 0
-    use_cet = False
     user_info = open(DATASET_DIR + '/userid-profile.tsv', 'r', buffering=10000, encoding='utf8')
     with open(DATASET_FILE, 'rt', buffering=10000, encoding='utf8') as dataset:
         for line in dataset:
@@ -97,7 +98,7 @@ def convert_timestamps_lastfm():
             timestamp   = (dateutil.parser.parse(line[1])).timestamp()
             artist_id   = line[2]
             artist_name = line[3]
-            if use_cet and (user_id != last_user_id or last_user_id == ""):
+            if create_lastfm_cet and (user_id != last_user_id or last_user_id == ""):
                 count += 1
                 profile = user_info.readline()
                 profile = profile.split('\t')
@@ -106,12 +107,12 @@ def convert_timestamps_lastfm():
                 last_user_id = user_id
                 if country.lower() not in cet:
                     print("no match")
-                    skipperino = True
+                    skip_country = True
                     num_skipped += 1
                 else:
                     print("match")
-                    skipperino = False
-            if skipperino:
+                    skip_country = False
+            if skip_country:
                 continue
 
             dataset_list.append( [user_id, timestamp, artist_id, artist_name] )
@@ -145,7 +146,6 @@ def map_user_and_artist_id_to_labels():
 
     file = open("artist_name_map.txt", "w", encoding="utf-8")
     for k, v in artist_name_map.items():
-        print(k, v)
         file.write(str(k) + " " + str(v) + "\n")
     
     # Save to pickle file
@@ -268,7 +268,7 @@ def sort_and_split_usersessions():
     art = {}
     for k, v in nus.items():
         sessions = v
-        if len(v) > 1420: #epirically found more or less fill up batches
+        if create_lastfm_cet and len(v) > 1420: #epirically found more or less fill up batches
             sessions = v[-1420:]
         for session in sessions:
             for i in range(len(session)):
@@ -276,7 +276,8 @@ def sort_and_split_usersessions():
                 if a not in art:
                     art[a] = len(art)+1
                 session[i][1] = art[a]
-        nus[k] = sessions
+        if create_lastfm_cet:
+            nus[k] = sessions
 
     save_pickle(nus, DATASET_USER_SESSIONS)
 
