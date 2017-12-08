@@ -5,10 +5,8 @@ import time
 
 runtime = time.time()
 reddit = "subreddit"
-lastfm = "lastfm"
+lastfm = "lastfm-new"
 
-# Uncomment the dataset you want to use here
-#dataset = reddit
 dataset = reddit
 
 home = os.path.expanduser('~')
@@ -63,37 +61,92 @@ def convert_timestamps_reddit():
 
     save_pickle(dataset_list, DATASET_W_CONVERTED_TIMESTAMPS)
 
+cet = [
+"norway",
+"sweden",
+"denmark",
+"germany",
+"france",
+"netherlands",
+"belgium",
+"spain",
+"italy",
+"switzerland",
+"austria",
+"poland",
+"czech republic",
+"slovenia",
+"slovakia",
+"croatia",
+"hungary",
+"bosnia hercegovina"
+]
+
 def convert_timestamps_lastfm():
+    last_user_id = ""
+    skipperino = False
     dataset_list = []
+    num_skipped = 0
+    count = 0
+    use_cet = False
+    user_info = open(DATASET_DIR + '/userid-profile.tsv', 'r', buffering=10000, encoding='utf8')
     with open(DATASET_FILE, 'rt', buffering=10000, encoding='utf8') as dataset:
         for line in dataset:
             line = line.split('\t')
             user_id     = line[0]
             timestamp   = (dateutil.parser.parse(line[1])).timestamp()
             artist_id   = line[2]
-            dataset_list.append( [user_id, timestamp, artist_id] )
+            artist_name = line[3]
+            if use_cet and (user_id != last_user_id or last_user_id == ""):
+                count += 1
+                profile = user_info.readline()
+                profile = profile.split('\t')
+                country = profile[3]
+                print(country, str(count))
+                last_user_id = user_id
+                if country.lower() not in cet:
+                    print("no match")
+                    skipperino = True
+                    num_skipped += 1
+                else:
+                    print("match")
+                    skipperino = False
+            if skipperino:
+                continue
+
+            dataset_list.append( [user_id, timestamp, artist_id, artist_name] )
 
     dataset_list = list(reversed(dataset_list))
+
+    print("NUM SKIPPED: ", num_skipped)
 
     save_pickle(dataset_list, DATASET_W_CONVERTED_TIMESTAMPS)
 
 def map_user_and_artist_id_to_labels():
     dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
     artist_map = {}
+    artist_name_map = {}
     user_map = {}
     artist_id = ''
     user_id = ''
     for i in range(len(dataset_list)):
         user_id = dataset_list[i][0]
         artist_id = dataset_list[i][2]
-        
+        artist_name = dataset_list[i][3]
+
         if user_id not in user_map:
             user_map[user_id] = len(user_map)
         if artist_id not in artist_map:
             artist_map[artist_id] = len(artist_map)
+            artist_name_map[len(artist_name_map)] = artist_name
         
         dataset_list[i][0] = user_map[user_id]
         dataset_list[i][2] = artist_map[artist_id]
+
+    file = open("artist_name_map.txt", "w", encoding="utf-8")
+    for k, v in artist_name_map.items():
+        print(k, v)
+        file.write(str(k) + " " + str(v) + "\n")
     
     # Save to pickle file
     save_pickle(dataset_list, DATASET_USER_ARTIST_MAPPED)
@@ -214,12 +267,16 @@ def sort_and_split_usersessions():
     # remap artistIDs
     art = {}
     for k, v in nus.items():
-        for session in v:
+        sessions = v
+        if len(v) > 1420: #epirically found more or less fill up batches
+            sessions = v[-1420:]
+        for session in sessions:
             for i in range(len(session)):
                 a = session[i][1]
                 if a not in art:
                     art[a] = len(art)+1
                 session[i][1] = art[a]
+        nus[k] = sessions
 
     save_pickle(nus, DATASET_USER_SESSIONS)
 

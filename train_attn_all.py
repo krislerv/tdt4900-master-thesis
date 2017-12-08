@@ -2,8 +2,8 @@ import datetime
 import os
 import time
 import numpy as np
-from models_attn_base import InterRNN, IntraRNN
-from datahandler_inter import IIRNNDataHandler
+from models_attn_all import InterRNN, IntraRNN
+from datahandler_attn import IIRNNDataHandler
 from test_util import Tester
 
 import torch
@@ -17,10 +17,14 @@ from tensorboard import Logger as TensorBoard
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm"
-dataset = lastfm
+dataset = reddit
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
-use_last_hidden_state = False
+use_last_hidden_state = True
+
+use_hidden_state_attn = True
+use_delta_t_attn = True
+use_week_time_attn = False
 
 # use gpu
 use_cuda = True
@@ -31,7 +35,7 @@ DATASET_PATH = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
 
 # logging
 DATE_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
-LOG_FILE = './testlog/' + str(DATE_NOW) + '-testing-attn-rnn-' + dataset + '.txt'
+LOG_FILE = './testlog/' + str(DATE_NOW) + '-testing-attn-rnn-' + dataset + '-' + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
@@ -69,6 +73,7 @@ if use_last_hidden_state:
 else:
     message += dataset + " with average of embeddings\n"
 message += "DATASET: " + dataset + " MODEL: attn-II-RNN"
+message += "\nuse_hidden_state_attn=" + str(use_hidden_state_attn) + " use_delta_t_attn=" + str(use_delta_t_attn) + " use_week_time_attn=" + str(use_week_time_attn)
 message += "\nCONFIG: N_ITEMS=" + str(N_ITEMS) + " BATCH_SIZE=" + str(BATCH_SIZE)
 message += "\nINTRA_INTERNAL_SIZE=" + str(INTRA_INTERNAL_SIZE) + " INTER_INTERNAL_SIZE=" + str(INTER_INTERNAL_SIZE)
 message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SIZE)
@@ -78,7 +83,7 @@ message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARN
 print(message)
 
 # initialize inter RNN
-inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE)
+inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, use_hidden_state_attn=use_hidden_state_attn, use_delta_t_attn=use_delta_t_attn, use_week_time_attn=use_week_time_attn)
 if use_cuda:
     inter_rnn = inter_rnn.cuda()
 inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
@@ -89,7 +94,7 @@ if use_cuda:
     intra_rnn = intra_rnn.cuda()
 intra_optimizer = optim.Adam(intra_rnn.parameters(), lr=LEARNING_RATE)
 
-def train(input, target, session_lengths, session_reps, inter_session_seq_length, use_last_hidden_state):
+def train(input, target, session_lengths, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch):
     inter_optimizer.zero_grad()
     intra_optimizer.zero_grad()
 
@@ -98,6 +103,9 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     session_lengths = Variable(torch.LongTensor(session_lengths).view(-1, 1)) # by reshaping the length to this, it can be broadcasted and used for division.
     session_reps = Variable(torch.FloatTensor(session_reps))
     inter_session_seq_length = Variable(torch.LongTensor(inter_session_seq_length))
+    input_timestamps = Variable(torch.FloatTensor(input_timestamps))
+    sess_rep_timestamps_batch = Variable(torch.FloatTensor(sess_rep_timestamps_batch))
+    sess_rep_timestamp_bucket_ids_batch = Variable(torch.LongTensor(sess_rep_timestamp_bucket_ids_batch))
 
     if use_cuda:
         input = input.cuda()
@@ -105,9 +113,20 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
         session_lengths = session_lengths.cuda()
         session_reps = session_reps.cuda()
         inter_session_seq_length = inter_session_seq_length.cuda()
+        input_timestamps = input_timestamps.cuda()
+        sess_rep_timestamps_batch = sess_rep_timestamps_batch.cuda()
+        sess_rep_timestamp_bucket_ids_batch = sess_rep_timestamp_bucket_ids_batch.cuda()
+
+    input_timestamps = input_timestamps.unsqueeze(1).expand(input.size(0), MAX_SESSION_REPRESENTATIONS)
+    delta_t = input_timestamps - sess_rep_timestamps_batch
+    delta_t_hours = delta_t.div(3600)
+
+    delta_t_hours = delta_t_hours.floor().long()
+    delta_t_ceiling = Variable(torch.LongTensor([168]).expand(input.size(0), 15)).cuda()    # 168 hours in a week
+    delta_t_hours = torch.min(delta_t_hours, delta_t_ceiling)
 
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
-    inter_output, inter_hidden = inter_rnn(session_reps, inter_hidden, inter_session_seq_length)
+    inter_output, inter_hidden, attn_weights = inter_rnn(session_reps, inter_hidden, inter_session_seq_length, delta_t_hours, sess_rep_timestamp_bucket_ids_batch)
 
     loss = 0
 
@@ -146,23 +165,37 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
 
     # return loss and new session representation
     if use_last_hidden_state:
-        return loss.data[0], hidden_out.data[0]
-    return loss.data[0], mean_x.data
+        return loss.data[0], hidden_out.data[0], attn_weights
+    return loss.data[0], mean_x.data, attn_weights
 
-def predict(input, session_lengths, session_reps, inter_session_seq_length):
+def predict(input, session_lengths, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch):
     input = Variable(torch.LongTensor(input))
     session_lengths = Variable(torch.LongTensor(session_lengths).view(-1, 1)) # by reshaping the length to this, it can be broadcasted and used for division.
     session_reps = Variable(torch.FloatTensor(session_reps))
     inter_session_seq_length = Variable(torch.LongTensor(inter_session_seq_length))
+    input_timestamps = Variable(torch.FloatTensor(input_timestamps))
+    sess_rep_timestamps_batch = Variable(torch.FloatTensor(sess_rep_timestamps_batch))
+    sess_rep_timestamp_bucket_ids_batch = Variable(torch.LongTensor(sess_rep_timestamp_bucket_ids_batch))
 
     if use_cuda:
         input = input.cuda()
         session_lengths = session_lengths.cuda()
         session_reps = session_reps.cuda()
         inter_session_seq_length = inter_session_seq_length.cuda()
+        input_timestamps = input_timestamps.cuda()
+        sess_rep_timestamps_batch = sess_rep_timestamps_batch.cuda()
+        sess_rep_timestamp_bucket_ids_batch = sess_rep_timestamp_bucket_ids_batch.cuda()
+
+    input_timestamps = input_timestamps.unsqueeze(1).expand(input.size(0), MAX_SESSION_REPRESENTATIONS)
+    delta_t = input_timestamps - sess_rep_timestamps_batch
+    delta_t_hours = delta_t.div(3600)
+
+    delta_t_hours = delta_t_hours.floor().long()
+    delta_t_ceiling = Variable(torch.LongTensor([168]).expand(input.size(0), 15)).cuda()
+    delta_t_hours = torch.min(delta_t_hours, delta_t_ceiling)
 
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
-    inter_output, inter_hidden = inter_rnn(session_reps, inter_hidden, inter_session_seq_length)
+    inter_output, inter_hidden, attn_weights = inter_rnn(session_reps, inter_hidden, inter_session_seq_length, delta_t_hours, sess_rep_timestamp_bucket_ids_batch)
 
     intra_hidden = inter_hidden
     for i in range(input.size(1)):
@@ -194,8 +227,8 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length):
     top_k_values, top_k_predictions = torch.topk(output, TOP_K)
 
     if use_last_hidden_state:
-        return top_k_predictions, hidden_out.data[0]
-    return top_k_predictions, mean_x.data
+        return top_k_predictions, hidden_out.data[0], attn_weights
+    return top_k_predictions, mean_x.data, attn_weights
 
 #CUSTOM CROSS ENTROPY LOSS(Replace as soon as pytorch has implemented an option for non-summed losses)
 #https://github.com/pytorch/pytorch/issues/264
@@ -228,18 +261,38 @@ while epoch <= MAX_EPOCHS:
     datahandler.reset_user_batch_data()
     datahandler.reset_user_session_representations()
     _batch_number = 0
-    xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list = datahandler.get_next_train_batch()
+    xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_train_batch()
     intra_rnn.train()
     inter_rnn.train()
     while len(xinput) > int(BATCH_SIZE / 2):
         _batch_number += 1
         batch_start_time = time.time()
-        batch_loss, sess_rep = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state)
+        batch_loss, sess_rep, attn_weights = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch)
 
-        datahandler.store_user_session_representations(sess_rep, user_list)
+        # uncomment to record attention weights
+        """
+        if _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
+            file = open("attn_weights-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+
+            last_sessions_for_user = datahandler.get_last_sessions_for_user(user_list[0])
+            for i in range(15):
+                file.write(str(attn_weights[0][i].data[0]) + ",")
+            file.write("\n\n")
+            file.write(str(input_timestamps[0]))
+            file.write("\n\n")
+            for session_id in range(len(last_sessions_for_user)):
+                file.write(str(last_sessions_for_user[session_id][0][0]) + "\n")
+                for event_id in range(len(last_sessions_for_user[session_id])):
+                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
+                file.write("\n")
+            file.write("\n\n\n\n\n\n")
+            file.close()
+        """
+
+        datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
         epoch_loss += batch_loss
-        if _batch_number % 100 == 0:
+        if _batch_number % 1000 == 0:
             batch_runtime = time.time() - batch_start_time
             print("Batch number:", str(_batch_number), "/", str(num_training_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
             print("\t Batch loss:", "%.3f" % batch_loss, end='')
@@ -247,21 +300,12 @@ while epoch <= MAX_EPOCHS:
             eta = "%.2f" % eta
             print("\t ETA:", eta, "minutes.")
 
+
             #============ TensorBoard logging ============#
             tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
-            """
-            for tag, value in inter_rnn.named_parameters():
-                tag = tag.replace('.', '/')
-                tensorboard.histo_summary('inter/' + tag, to_np(value), log_count)
-                tensorboard.histo_summary('inter/' + tag + '/grad', to_np(value.grad), log_count)
-            for tag, value in intra_rnn.named_parameters():
-                tag = tag.replace('.', '/')
-                tensorboard.histo_summary('intra/' + tag, to_np(value), log_count)
-                tensorboard.histo_summary('intra/' + tag + '/grad', to_np(value.grad), log_count)
-            """
             log_count += 1
         
-        xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list = datahandler.get_next_train_batch()
+        xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_train_batch()
 
     print("Epoch", epoch, "finished")
     print("|- Epoch loss:", epoch_loss)
@@ -273,40 +317,40 @@ while epoch <= MAX_EPOCHS:
     tester = Tester()
     datahandler.reset_user_batch_data()
     _batch_number = 0
-    xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list = datahandler.get_next_test_batch()
+    xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_test_batch()
     intra_rnn.eval()
     inter_rnn.eval()
     while len(xinput) > int(BATCH_SIZE / 2):
         batch_start_time = time.time()
         _batch_number += 1
 
-        batch_predictions, sess_rep = predict(xinput, sl, session_reps, inter_session_seq_length)
+        batch_predictions, sess_rep, attn_weights = predict(xinput, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch)
 
-        datahandler.store_user_session_representations(sess_rep, user_list)
+        datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
         # Evaluate predictions
         prediction_results = tester.evaluate_batch(batch_predictions, targetvalues, sl)
-        #print(prediction_results)
 
         # Print some stats during testing
-        if _batch_number % 100 == 0:
+        if _batch_number % 1000 == 0:
             batch_runtime = time.time() - batch_start_time
             print("Batch number:", str(_batch_number), "/", str(num_test_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
             eta = (batch_runtime*(num_test_batches-_batch_number)) / 60
             eta = "%.2f" % eta
             print("\t ETA:", eta, "minutes.")
         
-        xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list = datahandler.get_next_test_batch()
+        xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_test_batch()
 
     # Print final test stats for epoch
     test_stats, current_recall5, current_recall20 = tester.get_stats_and_reset()
     print("Recall@5 = " + str(current_recall5))
     print("Recall@20 = " + str(current_recall20))
+    print(test_stats)
     if epoch == 1:
         datahandler.log_config(message)
     datahandler.log_test_stats(epoch, epoch_loss, test_stats)
     tensorboard.scalar_summary('recall@5', current_recall5, epoch)
     tensorboard.scalar_summary('recall@20', current_recall20, epoch)
     tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
-
+    
     epoch += 1

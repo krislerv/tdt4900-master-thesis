@@ -34,24 +34,36 @@ class IIRNNDataHandler:
 
         # LOG
         self.log_file = log_file
-        logging.basicConfig(filename=log_file,level=logging.DEBUG)
+        logging.basicConfig(filename=log_file, level=logging.DEBUG)
 
-        """
-        for k, v in self.trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
-            print(v)
-            times = []
-            for session_index in range(1,len(v)):
-                gap = (self.trainset[k][session_index][0][0]-self.trainset[k][session_index-1][0][0])/3600
-                #print(self.trainset[k][session_index])
-                times.append(gap)
-            gap = (self.testset[k][0][0][0]-self.trainset[k][len(v)-1][0][0])/3600
-            times.append(gap)
-            #self.update_gap_range(gap)
-            #self.user_train_times[k] = times
-        """
+        self.set_session_timestamps()
     
         # batch control
         self.reset_user_batch_data()
+
+    def set_session_timestamps(self):
+        self.train_timestamps = [None] * self.num_users
+        self.test_timestamps = [None] * self.num_users
+        self.train_timestamp_bucket_ids = [None] * self.num_users
+        self.test_timestamp_bucket_ids = [None] * self.num_users
+        for k, v in self.trainset.items():
+            timestamps = []
+            timestamp_bucket_ids = []
+            for session_index in range(len(v)):
+                timestamp = self.trainset[k][session_index][0][0]
+                timestamps.append(timestamp)
+                timestamp_bucket_ids.append(datetime.datetime.utcfromtimestamp(timestamp).weekday() * 24 + datetime.datetime.utcfromtimestamp(timestamp).hour)
+            self.train_timestamps[k] = timestamps
+            self.train_timestamp_bucket_ids[k] = timestamp_bucket_ids
+        for k, v in self.testset.items():
+            timestamps = []
+            timestamp_bucket_ids = []
+            for session_index in range(len(v)):
+                timestamp = self.testset[k][session_index][0][0]
+                timestamps.append(timestamp)
+                timestamp_bucket_ids.append(datetime.datetime.utcfromtimestamp(timestamp).weekday() * 24 + datetime.datetime.utcfromtimestamp(timestamp).hour)
+            self.test_timestamps[k] = timestamps
+            self.test_timestamp_bucket_ids[k] = timestamp_bucket_ids
 
     """
     Returns the unix time for a given event in the last session processed for the given user
@@ -71,7 +83,6 @@ class IIRNNDataHandler:
         return last_sessions
 
 
-
     # call before training and testing
     def reset_user_batch_data(self):
         # the index of the next session(event) to retrieve for a user
@@ -87,11 +98,17 @@ class IIRNNDataHandler:
     def reset_user_session_representations(self):
         # session representations for each user is stored here
         self.user_session_representations = [None]*self.num_users
+        self.user_session_representations_timestamps = [None]*self.num_users
+        self.user_session_representations_timestamp_bucket_ids = [None]*self.num_users
         # the number of (real) session representations a user has
         self.num_user_session_representations = [0]*self.num_users
         for k, v in self.trainset.items():
             self.user_session_representations[k] = collections.deque(maxlen=self.MAX_SESSION_REPRESENTATIONS)
             self.user_session_representations[k].append([0]*self.LT_INTERNALSIZE)
+            self.user_session_representations_timestamps[k] = collections.deque(maxlen=self.MAX_SESSION_REPRESENTATIONS)
+            self.user_session_representations_timestamps[k].append(0)
+            self.user_session_representations_timestamp_bucket_ids[k] = collections.deque(maxlen=self.MAX_SESSION_REPRESENTATIONS)
+            self.user_session_representations_timestamp_bucket_ids[k].append(0)
 
     def get_N_highest_indexes(a,N):
         return np.argsort(a)[::-1][:N]
@@ -131,24 +148,27 @@ class IIRNNDataHandler:
     def get_num_test_batches(self):
         return self.get_num_batches(self.testset)
 
-    def get_next_batch(self, dataset, dataset_session_lengths):
+    def get_next_batch(self, dataset, dataset_session_lengths, timestamp_set, timestamp_bucket_ids_set):
         session_batch = []
         session_lengths = []
         sess_rep_batch = []
         sess_rep_lengths = []
         sess_time_vectors = []
+        sess_rep_timestamps_batch = []
+        sess_rep_timestamp_bucket_ids_batch = []
+        input_timestamps = []
+        input_timestamp_bucket_ids = []
         
         # Decide which users to take sessions from. First count the number of remaining sessions
         remaining_sessions = [0]*len(self.users_with_remaining_sessions)
         for i in range(len(self.users_with_remaining_sessions)):
             user = self.users_with_remaining_sessions[i]
             remaining_sessions[i] = len(dataset[user]) - self.user_next_session_to_retrieve[user]
-            #print(user, remaining_sessions[i])
         
         # index of users to get
         user_list = IIRNNDataHandler.get_N_highest_indexes(remaining_sessions, self.batch_size)
         if(len(user_list) == 0):
-            return [], [], [], [], [], []
+            return [], [], [], [], [], [], [], [], [], []
         for i in range(len(user_list)):
             user_list[i] = self.users_with_remaining_sessions[user_list[i]]
 
@@ -161,28 +181,37 @@ class IIRNNDataHandler:
             srl = max(self.num_user_session_representations[user],1)
             sess_rep_lengths.append(srl)
             sess_rep = list(self.user_session_representations[user]) #copy
+            sess_rep_timestamps = list(self.user_session_representations_timestamps[user])
+            sess_rep_timestamp_bucket_ids = list(self.user_session_representations_timestamp_bucket_ids[user])
             if(srl < self.MAX_SESSION_REPRESENTATIONS):
                 for i in range(self.MAX_SESSION_REPRESENTATIONS-srl):
                     sess_rep.append([0]*self.LT_INTERNALSIZE) #pad with zeroes after valid reps
+                    sess_rep_timestamps.append(0)
+                    sess_rep_timestamp_bucket_ids.append(168)
             sess_rep_batch.append(sess_rep)
+            sess_rep_timestamps_batch.append(sess_rep_timestamps)
+            sess_rep_timestamp_bucket_ids_batch.append(sess_rep_timestamp_bucket_ids)
 
             self.user_next_session_to_retrieve[user] += 1
             if self.user_next_session_to_retrieve[user] >= len(dataset[user]):
                 # User have no more session, remove him from users_with_remaining_sessions
                 self.users_with_remaining_sessions.remove(user)
 
+            input_timestamps.append(timestamp_set[user][session_index])
+            input_timestamp_bucket_ids.append(timestamp_bucket_ids_set[user][session_index])
+
         #sort batch based on seq rep len
         session_batch = [[event[1] for event in session] for session in session_batch]
         x = [session[:-1] for session in session_batch]
         y = [session[1:] for session in session_batch]
 
-        return x, y, session_lengths, sess_rep_batch, sess_rep_lengths, user_list
+        return x, y, session_lengths, input_timestamps, input_timestamp_bucket_ids, sess_rep_batch, sess_rep_lengths, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list
 
     def get_next_train_batch(self):
-        return self.get_next_batch(self.trainset, self.train_session_lengths)
+        return self.get_next_batch(self.trainset, self.train_session_lengths, self.train_timestamps, self.train_timestamp_bucket_ids)
 
     def get_next_test_batch(self):
-        return self.get_next_batch(self.testset, self.test_session_lengths)
+        return self.get_next_batch(self.testset, self.test_session_lengths, self.test_timestamps, self.test_timestamp_bucket_ids)
 
     def get_latest_epoch(self, epoch_file):
         if not os.path.isfile(epoch_file):
@@ -210,11 +239,13 @@ class IIRNNDataHandler:
         logging.info(config)
 
     
-    def store_user_session_representations(self, sessions_representations, user_list):
+    def store_user_session_representations(self, sessions_representations, user_list, session_timestamps, session_timestamp_bucket_ids):
         for i in range(len(user_list)):
             user = user_list[i]
             if(user != -1):
                 session_representation = list(sessions_representations[i])
+                session_timestamp = float(session_timestamps[i])
+                session_timestamp_bucket_id = int(session_timestamp_bucket_ids[i])
 
                 num_reps = self.num_user_session_representations[user]
                 
@@ -222,6 +253,10 @@ class IIRNNDataHandler:
                 #self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
                 if(num_reps == 0):
                     self.user_session_representations[user].pop() #pop the sucker
+                    self.user_session_representations_timestamps[user].pop()
+                    self.user_session_representations_timestamp_bucket_ids[user].pop()
                 self.user_session_representations[user].append(session_representation)
+                self.user_session_representations_timestamps[user].append(session_timestamp)
+                self.user_session_representations_timestamp_bucket_ids[user].append(session_timestamp_bucket_id)
                 self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
 
