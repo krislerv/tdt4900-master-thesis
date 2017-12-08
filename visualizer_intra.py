@@ -23,7 +23,7 @@ class LoginScreen(GridLayout):
 
         artist_name_map = open("reddit_name_map.txt", "r", encoding="utf-8")
         remap = open("reddit_remap.txt", "r", encoding="utf-8")
-        attn_weights = open("attn_weights.txt", "r")
+        attn_weights = open("attn_weights_intra.txt", "r")
 
         artists = {}
         artists_remap = {}

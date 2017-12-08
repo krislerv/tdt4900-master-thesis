@@ -5,11 +5,11 @@ import time
 
 runtime = time.time()
 reddit = "subreddit"
-lastfm = "lastfm-new"
+lastfm = "lastfm"
 
 create_lastfm_cet = False
 
-dataset = reddit
+dataset = lastfm
 
 home = os.path.expanduser('~')
 
@@ -144,7 +144,7 @@ def map_user_and_artist_id_to_labels():
         dataset_list[i][0] = user_map[user_id]
         dataset_list[i][2] = artist_map[artist_id]
 
-    file = open("artist_name_map.txt", "w", encoding="utf-8")
+    file = open(dataset + "_map.txt", "w", encoding="utf-8")
     for k, v in artist_name_map.items():
         file.write(str(k) + " " + str(v) + "\n")
     
@@ -278,6 +278,10 @@ def sort_and_split_usersessions():
                 session[i][1] = art[a]
         if create_lastfm_cet:
             nus[k] = sessions
+
+    file = open(dataset + "_remap.txt", "w", encoding="utf-8")
+    for k, v in art.items():
+        file.write(str(k) + " " + str(v) + "\n")
 
     save_pickle(nus, DATASET_USER_SESSIONS)
 

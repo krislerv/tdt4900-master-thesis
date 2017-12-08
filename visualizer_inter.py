@@ -23,9 +23,9 @@ class LoginScreen(GridLayout):
     def __init__(self, **kwargs):
         super(LoginScreen, self).__init__(**kwargs)
 
-        artist_name_map = open("reddit_name_map.txt", "r", encoding="utf-8")
+        artist_name_map = open("reddit_map.txt", "r", encoding="utf-8")
         remap = open("reddit_remap.txt", "r", encoding="utf-8")
-        attn_weights = open("attn_weights2.txt", "r")
+        attn_weights = open("attn_weights_inter.txt", "r")
 
         artists = {}
         artists_remap = {}

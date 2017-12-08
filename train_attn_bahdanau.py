@@ -23,10 +23,10 @@ dataset = lastfm
 use_last_hidden_state = False
 
 use_hidden_state_attn = False
-use_delta_t_attn = False
-use_week_time_attn = False
+use_delta_t_attn = True
+use_week_time_attn = True
 
-use_intra_attn = False
+use_intra_attn = True
 
 # use gpu
 use_cuda = True
@@ -287,45 +287,13 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch)
 
-        # uncomment to record inter-session attention weights
-        """
-        if _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
-            file = open("inter_attn_weights-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+        # log inter attention weights
+        if (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
+            datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps)
 
-            last_sessions_for_user = datahandler.get_last_sessions_for_user(user_list[0])
-            for i in range(15):
-                file.write(str(inter_attn_weights[0][i].data[0]) + ",")
-            file.write("\n\n")
-            file.write(str(input_timestamps[0]))
-            file.write("\n\n")
-            for session_id in range(len(last_sessions_for_user)):
-                file.write(str(last_sessions_for_user[session_id][0][0]) + "\n")
-                for event_id in range(len(last_sessions_for_user[session_id])):
-                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
-                file.write("\n")
-            file.write("\n\n\n\n\n\n")
-            file.close()
-        """
-
-        # uncomment to record intra-session attention weights
-        """
-        intra_attn_weights = intra_attn_weights.transpose(1, 2)
-        if inter_session_seq_length[0] == 15 and sl[0] > 5:
-            file = open("intra_attn_weights-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
-            session_length = sl[0]
-            file.write(str(session_length) + "\n")
-            for i in range(19):
-                file.write(str(top_k_predictions[0][i][0].data[0]) + ",")
-            file.write("\n\n")
-            last_sessions_for_user = datahandler.get_last_sessions_for_user(user_list[0])
-            for session_id in range(len(last_sessions_for_user)):
-                for a in range(len(intra_attn_weights[0][session_id])):
-                    file.write(str(intra_attn_weights[0][session_id][a].data[0]).format("%0.4f") + ",")
-                file.write("\n")
-                for event_id in range(len(last_sessions_for_user[session_id])):
-                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
-                file.write("\n\n")
-        """
+        # log intra attention weights
+        if use_intra_attn and inter_session_seq_length[0] == 15 and sl[0] > 5 and _batch_number % 100 == 0:
+            datahandler.log_attention_weights_intra(intra_attn_weights, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, sl, top_k_predictions, user_list[0])
 
 
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
