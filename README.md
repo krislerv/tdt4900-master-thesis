@@ -4,8 +4,8 @@ Based on the code from https://github.com/olesls/master_thesis
 
 # Requirements
 Python 3  
-Pytorch
-Tensorflow (for Tensorboard)
+Pytorch  
+Tensorflow (for Tensorboard)  
 Numpy  
 Pickle  
 
@@ -64,15 +64,15 @@ Testresults are stored in `testlog/`.
 `MAX_EPOCHS` defines the maximum number of training epochs before the program terminates. It is no problem to manually terminate the program while training/testing the model and continue later if you have `save_best = True`. But notice that when you start the program again, it will load and continue training the last saved (best) model. Thus, if you are currently on epoch #40, and the last best model was achieved at epoch #32, then the training will start from epoch #32 again when restarting.  
 `N_LAYERS` defines the number of GRU-layers used in the intra-session RNN layer.  
 `TOP_K` defines the number of items the model produces in each recommendation.  
-`use_hidden_state_attn` decides whether or not to use the hidden representation attention mechanism in the inter-session RNN.
-`use_delta_t_attn` decides whether or not to use the delta-t attention mechanism in the inter-session RNN.
-`use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.
-`use_intra_attn` decides whether or not to use the intra attention mechanism.
+`use_hidden_state_attn` decides whether or not to use the hidden representation attention mechanism in the inter-session RNN.  
+`use_delta_t_attn` decides whether or not to use the delta-t attention mechanism in the inter-session RNN.  
+`use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.  
+`use_intra_attn` decides whether or not to use the intra attention mechanism.  
 
   
 # Visualizing attention weights
 Visualization of attention weights is done in `visualizer_inter.py` and `visualizer_intra.py`.
-After running the datasets through preprocessing, you should have two files called `<dataset>_map.txt` and `<dataset>_remap.txt`. These must be in the same directory as the visualizer files. While training, the system will log attention weights into files with the names `*_attn_weights-*`. Each separate logging is separated by several empty lines. You must copy one of these logging instances into a separate textfile called either `attn_weights_intra.txt` or `attn_weights_inter.txt` depending on the type of attention weight. After this is done, you should only have to run the visualizer files to see the visualization.
+After running the datasets through preprocessing, you should have two files called `<dataset>_map.txt` and `<dataset>_remap.txt`. These must be in the same directory as the visualizer files. While training, the system will log attention weights into files with the names `*_attn_weights-*`. Each separate logging is separated by several empty lines. You must copy one of these logging instances into a separate textfile called either `attn_weights_intra.txt` or `attn_weights_inter.txt` depending on the type of attention weight. After this is done, you should only have to run the visualizer files to see the visualization.  
 At the top of the Visualizer class, there is a variable, `show_timestamp`. If set to True, it will show the time difference from each session representation to the new session. If set to False, it will show the events in the session representation instead.
 
 # Other files
