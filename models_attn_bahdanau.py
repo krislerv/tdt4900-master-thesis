@@ -3,6 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+class Embed(nn.Module):
+    def __init__(self, input_size, embedding_size):
+        super(Embed, self).__init__()
+        self.embedding_table = nn.Embedding(input_size, embedding_size)
+        self.embedding_table.weight.data.copy_(torch.zeros(input_size,embedding_size).uniform_(-1,1))
+        self.embedding_table.weight.data[0] = torch.zeros(embedding_size) #ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
+    
+    def forward(self, input):
+        output = self.embedding_table(input)
+        return output
+
 class InterRNN(nn.Module):
     def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False):
         super(InterRNN, self).__init__()
@@ -108,24 +119,25 @@ class IntraRNN(nn.Module):
 
         self.use_attn = use_attn
 
-        self.embedding = nn.Embedding(n_items, embedding_size)
-        self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
-        self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
+        #self.embedding = nn.Embedding(n_items, embedding_size)
+        #self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
+        #self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
         self.gru = nn.GRU(embedding_size * (1 + self.use_attn), hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
         self.linear = nn.Linear(embedding_size, n_items)
 
-        self.wa = nn.Parameter(torch.FloatTensor(embedding_size, hidden_size))
-        self.wa.data.copy_(torch.zeros(embedding_size, hidden_size).uniform_(-1, 1))
-        self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
-        self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
-        self.va = nn.Parameter(torch.FloatTensor(1, hidden_size))
-        self.va.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
+        if self.use_attn:
+            self.wa = nn.Parameter(torch.FloatTensor(embedding_size, hidden_size))
+            self.wa.data.copy_(torch.zeros(embedding_size, hidden_size).uniform_(-1, 1))
+            self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
+            self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
+            self.va = nn.Parameter(torch.FloatTensor(1, hidden_size))
+            self.va.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
 
-    def forward(self, input, hidden, inter_output):
-        embedded_input = self.embedding(input)
-        embedded_input = self.dropout1(embedded_input)
+    def forward(self, input, input_embedding, hidden, inter_output):
+        #embedded_input = self.embedding(input)
+        embedded_input = self.dropout1(input_embedding)
 
         if self.use_attn:
             hidden_t = hidden.transpose(0, 1)

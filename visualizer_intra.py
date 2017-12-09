@@ -21,7 +21,7 @@ class LoginScreen(GridLayout):
     def __init__(self, **kwargs):
         super(LoginScreen, self).__init__(**kwargs)
 
-        artist_name_map = open("reddit_name_map.txt", "r", encoding="utf-8")
+        artist_name_map = open("reddit_map.txt", "r", encoding="utf-8")
         remap = open("reddit_remap.txt", "r", encoding="utf-8")
         attn_weights = open("attn_weights_intra.txt", "r")
 
@@ -79,7 +79,7 @@ class LoginScreen(GridLayout):
 
         self.add_widget(Label(size_hint=(1, 12)))
 
-        show_timestamp = True
+        show_timestamp = False
 
         # print sess reps
         for i in range(15):
