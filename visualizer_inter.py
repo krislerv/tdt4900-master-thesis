@@ -18,10 +18,12 @@ class MyLabel(Label):
             Rectangle(pos=self.pos, size=self.size)
 
 
-class LoginScreen(GridLayout):
+class Visualizer(GridLayout):
 
     def __init__(self, **kwargs):
-        super(LoginScreen, self).__init__(**kwargs)
+        super(Visualizer, self).__init__(**kwargs)
+
+        show_timestamp = True
 
         artist_name_map = open("reddit_map.txt", "r", encoding="utf-8")
         remap = open("reddit_remap.txt", "r", encoding="utf-8")
@@ -75,8 +77,6 @@ class LoginScreen(GridLayout):
                 attn_weight_values[i] = (float(attn_weight_values[i]) - min) / (max - min)
         """
 
-        show_timestamp = True
-
         # print sess reps
         for i in range(15):
             if show_timestamp:
@@ -104,7 +104,7 @@ class LoginScreen(GridLayout):
 class MyApp(App):
 
     def build(self):
-        return LoginScreen()
+        return Visualizer()
 
 
 if __name__ == '__main__':

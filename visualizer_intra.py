@@ -16,10 +16,12 @@ class MyLabel(Label):
             Rectangle(pos=self.pos, size=self.size)
 
 
-class LoginScreen(GridLayout):
+class Visualizer(GridLayout):
 
     def __init__(self, **kwargs):
-        super(LoginScreen, self).__init__(**kwargs)
+        super(Visualizer, self).__init__(**kwargs)
+
+        show_timestamp = False
 
         artist_name_map = open("reddit_map.txt", "r", encoding="utf-8")
         remap = open("reddit_remap.txt", "r", encoding="utf-8")
@@ -79,7 +81,6 @@ class LoginScreen(GridLayout):
 
         self.add_widget(Label(size_hint=(1, 12)))
 
-        show_timestamp = False
 
         # print sess reps
         for i in range(15):
@@ -111,7 +112,7 @@ class LoginScreen(GridLayout):
 class MyApp(App):
 
     def build(self):
-        return LoginScreen()
+        return Visualizer()
 
 
 if __name__ == '__main__':

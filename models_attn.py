@@ -3,6 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+class Embed(nn.Module):
+    def __init__(self, input_size, embedding_size):
+        super(Embed, self).__init__()
+        self.embedding_table = nn.Embedding(input_size, embedding_size)
+        self.embedding_table.weight.data.copy_(torch.zeros(input_size,embedding_size).uniform_(-1,1))
+        self.embedding_table.weight.data[0] = torch.zeros(embedding_size) #ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
+    
+    def forward(self, input):
+        output = self.embedding_table(input)
+        return output
+
 class InterRNN(nn.Module):
     def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False):
         super(InterRNN, self).__init__()
@@ -37,7 +48,7 @@ class InterRNN(nn.Module):
             self.index_list = []
             for i in range(max_session_representations):
                 self.index_list.append(i)
-            self.index_list = torch.LongTensor(self.index_list).cuda()
+            self.index_list = torch.LongTensor(self.index_list).cuda(1)
 
     def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps):
         # gets the output of the last non-zero session representation
@@ -95,35 +106,64 @@ class InterRNN(nn.Module):
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda()
+            return hidden.cuda(1)
         return hidden
 
 class IntraRNN(nn.Module):
-    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout):
+    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, use_attn):
         super(IntraRNN, self).__init__()
 
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.embedding_size = embedding_size
 
-        self.embedding = nn.Embedding(n_items, embedding_size)
-        self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
-        self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
-        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
+        self.use_attn = use_attn
+
+        #self.embedding = nn.Embedding(n_items, embedding_size)
+        #self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
+        #self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
+        self.gru = nn.GRU(embedding_size * (1 + self.use_attn), hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
         self.linear = nn.Linear(embedding_size, n_items)
 
-    def forward(self, input, hidden, inter_output):
-        embedded_input = self.embedding(input)
-        embedded_input = self.dropout1(embedded_input)
-        gru_output, hidden = self.gru(embedded_input, hidden)
+        if self.use_attn:
+            self.wa = nn.Parameter(torch.FloatTensor(embedding_size, hidden_size))
+            self.wa.data.copy_(torch.zeros(embedding_size, hidden_size).uniform_(-1, 1))
+            self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
+            self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
+            self.va = nn.Parameter(torch.FloatTensor(1, hidden_size))
+            self.va.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
+
+    def forward(self, input, input_embedding, hidden, inter_output):
+        #embedded_input = self.embedding(input)
+        embedded_input = self.dropout1(input_embedding)
+
+        print(hidden.size())
+        print(inter_output.size())
+
+        if self.use_attn:
+            hidden_t = hidden.transpose(0, 1)
+            wasi = torch.bmm(hidden_t, self.wa.expand(input.size(0), self.hidden_size, self.hidden_size))
+            hjua = torch.bmm(inter_output, self.ua.expand(input.size(0), self.hidden_size, self.hidden_size))
+            result = torch.tanh(wasi.expand(input.size(0), 15, self.hidden_size) + hjua)
+            print(result.size())
+            result_t = result.transpose(1, 2)
+            energies = torch.bmm(self.va.expand(input.size(0), 1, self.hidden_size), result_t)
+            attn_weights = F.softmax(energies.squeeze())
+            context = torch.bmm(attn_weights.unsqueeze(1), inter_output)
+            gru_input = torch.cat((embedded_input, context), 2)
+            gru_output, hidden = self.gru(gru_input, hidden)
+        else:
+            gru_output, hidden = self.gru(embedded_input, hidden)
+            attn_weights = []
+
         output = self.dropout2(gru_output)
         output = self.linear(output)
-        return output, hidden, embedded_input, gru_output
+        return output, hidden, embedded_input, gru_output, attn_weights
 
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda()
+            return hidden.cuda(1)
         return hidden
