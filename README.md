@@ -7,7 +7,9 @@ Python 3
 Pytorch  
 Tensorflow (for Tensorboard)  
 Numpy  
-Pickle  
+Pickle
+Scipy
+gpustat
 
 # Usage
 

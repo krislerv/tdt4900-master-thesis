@@ -5,7 +5,7 @@ import time
 
 runtime = time.time()
 reddit = "subreddit"
-lastfm = "lastfm"
+lastfm = "lastfm new"
 
 create_lastfm_cet = False
 
@@ -133,7 +133,7 @@ def map_user_and_artist_id_to_labels():
     for i in range(len(dataset_list)):
         user_id = dataset_list[i][0]
         artist_id = dataset_list[i][2]
-        artist_name = dataset_list[i][3]
+        artist_name = dataset_list[i][2 if dataset == reddit else 3]
 
         if user_id not in user_map:
             user_map[user_id] = len(user_map)

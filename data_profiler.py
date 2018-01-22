@@ -1,6 +1,7 @@
 import os
 import pickle
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 HOME = os.path.expanduser('~')
@@ -129,10 +130,6 @@ def session_gap_distribution():
     train_session_lengths = dataset['train_session_lengths']
     test_session_lengths = dataset['test_session_lengths']
 
-    num_users = len(trainset)
-    if len(trainset) != len(testset):
-        raise Exception("Testset and trainset have different amount of users.")
-
     session_gaps = []
 
     for k, v in trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
@@ -144,7 +141,120 @@ def session_gap_distribution():
     print(min(session_gaps))
     print(max(session_gaps))
 
-    plt.hist(session_gaps, 1000, range=(0, 1000), log=True, color='#0000FF', edgecolor='none')
+    plt.hist(session_gaps, 1000, range=(0, 400), log=True, color='#0000FF', edgecolor='none')
+    plt.xticks(np.arange(0, 361, 24))
     plt.show()
 
-session_gap_distribution()
+
+def num_unique_actions_per_user():
+    dataset = "subreddit"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
+    dataset = pickle.load(open(dataset_path, 'rb'))
+
+    trainset = dataset['trainset']
+    testset = dataset['testset']
+    train_session_lengths = dataset['train_session_lengths']
+    test_session_lengths = dataset['test_session_lengths']
+
+    per_user_unique_actions = {}
+    per_user_total_actions = {}
+
+    for i in range(len(trainset.items())):
+        per_user_total_actions[i] = 0
+
+    for k, v in trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        user_unique_items = set()
+        for session_index in range(len(v)):
+            for event_index in range(len(trainset[k][session_index])):
+                user_unique_items.add(trainset[k][session_index][0][1])
+                per_user_total_actions[k] += 1
+        per_user_unique_actions[k] = user_unique_items
+
+    for k, v in per_user_unique_actions.items():
+        per_user_unique_actions[k] = len(v)
+
+    ##### TEST SET OGSÅ
+
+    return per_user_unique_actions, per_user_total_actions
+
+def avg_session_length_per_user():
+    dataset = "subreddit"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
+    dataset = pickle.load(open(dataset_path, 'rb'))
+
+    trainset = dataset['trainset']
+    testset = dataset['testset']
+    train_session_lengths = dataset['train_session_lengths']
+    test_session_lengths = dataset['test_session_lengths']
+
+    per_user_session_lengths = {}
+
+    for k, v in trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        user_session_lengths = []
+        for session_index in range(len(v)):
+            event_count = 0
+            for event_index in range(len(trainset[k][session_index])):
+                if trainset[k][session_index][event_index][1] != 0:
+                    event_count += 1
+                else:
+                    break
+            user_session_lengths.append(event_count)
+        per_user_session_lengths[k] = user_session_lengths
+
+    for k, v in per_user_session_lengths.items():
+        per_user_session_lengths[k] = sum(per_user_session_lengths[k]) / len(per_user_session_lengths[k])
+
+    ##### TEST SET OGSÅ
+
+    return list(per_user_session_lengths.values())
+
+def plot_num_unique_user_actions_vs_accuracy_increase():
+    baseline = open("reddit_baseline_per_user_accuracy.txt", "r", encoding="utf-8")
+    hidden = open("reddit_hidden_per_user_accuracy.txt", "r", encoding="utf-8")
+
+    per_user_unique_actions, per_user_total_actions = num_unique_actions_per_user()
+
+    line = baseline.readline()
+    baseline = line.split(",")
+
+    line = hidden.readline()
+    hidden = line.split(",")
+
+    per_user_accuracy_increase = []
+
+    for i in range(len(per_user_unique_actions)):
+        per_user_accuracy_increase.append(float(hidden[i].strip()) - float(baseline[i].strip()))
+
+    for k, v in per_user_unique_actions.items():
+        per_user_unique_actions[k] /= per_user_total_actions[k]
+
+    plt.scatter(list(per_user_unique_actions.values()), per_user_accuracy_increase)
+
+    #plt.hist(session_gaps, 1000, range=(0, 400), log=True, color='#0000FF', edgecolor='none')
+    #plt.xticks(np.arange(0, 361, 24))
+    plt.show()
+
+def plot_user_avg_session_lengths_vs_accuracy_increase():
+    baseline = open("reddit_baseline_per_user_accuracy.txt", "r", encoding="utf-8")
+    hidden = open("reddit_hidden_per_user_accuracy.txt", "r", encoding="utf-8")
+
+    per_user_avg_session_length = avg_session_length_per_user()
+
+    line = baseline.readline()
+    baseline = line.split(",")
+
+    line = hidden.readline()
+    hidden = line.split(",")
+
+    per_user_accuracy_increase = []
+
+    for i in range(len(per_user_avg_session_length)):
+        per_user_accuracy_increase.append(float(hidden[i].strip()) - float(baseline[i].strip()))
+
+    plt.scatter(per_user_avg_session_length, per_user_accuracy_increase)
+
+    #plt.hist(session_gaps, 1000, range=(0, 400), log=True, color='#0000FF', edgecolor='none')
+    #plt.xticks(np.arange(0, 361, 24))
+    plt.show()
+
+plot_user_avg_session_lengths_vs_accuracy_increase()

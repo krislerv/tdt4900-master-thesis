@@ -48,7 +48,7 @@ class InterRNN(nn.Module):
             self.index_list = []
             for i in range(max_session_representations):
                 self.index_list.append(i)
-            self.index_list = torch.LongTensor(self.index_list).cuda(1)
+            self.index_list = torch.LongTensor(self.index_list).cuda()
 
     def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps):
         # gets the output of the last non-zero session representation
@@ -106,16 +106,17 @@ class InterRNN(nn.Module):
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda(1)
+            return hidden.cuda()
         return hidden
 
 class IntraRNN(nn.Module):
-    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, use_attn):
+    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, use_attn):
         super(IntraRNN, self).__init__()
 
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.embedding_size = embedding_size
+        self.max_session_representations = max_session_representations
 
         self.use_attn = use_attn
 
@@ -136,18 +137,18 @@ class IntraRNN(nn.Module):
             self.va.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
 
     def forward(self, input, input_embedding, hidden, inter_output):
-        #embedded_input = self.embedding(input)
-        embedded_input = self.dropout1(input_embedding)
-
+        print(input.size())
+        print(input_embedding.size())
         print(hidden.size())
         print(inter_output.size())
+        #embedded_input = self.embedding(input)
+        embedded_input = self.dropout1(input_embedding)
 
         if self.use_attn:
             hidden_t = hidden.transpose(0, 1)
             wasi = torch.bmm(hidden_t, self.wa.expand(input.size(0), self.hidden_size, self.hidden_size))
             hjua = torch.bmm(inter_output, self.ua.expand(input.size(0), self.hidden_size, self.hidden_size))
-            result = torch.tanh(wasi.expand(input.size(0), 15, self.hidden_size) + hjua)
-            print(result.size())
+            result = torch.tanh(wasi.expand(input.size(0), self.max_session_representations, self.hidden_size) + hjua)
             result_t = result.transpose(1, 2)
             energies = torch.bmm(self.va.expand(input.size(0), 1, self.hidden_size), result_t)
             attn_weights = F.softmax(energies.squeeze())
@@ -165,5 +166,5 @@ class IntraRNN(nn.Module):
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda(1)
+            return hidden.cuda()
         return hidden

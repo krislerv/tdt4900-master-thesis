@@ -106,5 +106,8 @@ venv.bak/
 # tensorboard log files
 logs/
 
-# mor elog files
+# more log files
 testlog/
+
+# attention weight logs
+attn_weights/

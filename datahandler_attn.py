@@ -227,12 +227,17 @@ class IIRNNDataHandler:
         message = timestamp+'\n'+message
         return message
 
-    def log_test_stats(self, epoch_number, epoch_loss, stats):
-        timestamp = str(datetime.datetime.now())
-        message = timestamp+'\n\tEpoch #: '+str(epoch_number)
-        message += '\n\tEpoch loss: '+str(epoch_loss)+'\n'
-        message += stats
-        logging.info(message)
+    def log_test_stats(self, epoch_number, epoch_loss, stats, per_user_accuracies, per_session_length_accuracies):
+        try:
+            timestamp = str(datetime.datetime.now())
+            message = timestamp+'\n\tEpoch #: '+str(epoch_number)
+            message += '\n\tEpoch loss: '+str(epoch_loss)+'\n'
+            message += stats + "\n\n"
+            message += str(per_user_accuracies) + "\n\n"
+            message += str(per_session_length_accuracies)
+            logging.info(message)
+        except:
+            print("logging failed")
 
     def log_config(self, config):
         config = self.add_timestamp_to_message(config)
@@ -261,38 +266,44 @@ class IIRNNDataHandler:
                 self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
 
     def log_attention_weights_inter(self, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_id, inter_attn_weights, input_timestamps, dataset):
-        file = open("inter_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+        try:
+            file = open("inter_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
 
-        last_sessions_for_user = self.get_last_sessions_for_user(user_id)
-        for i in range(15):
-            file.write(str(inter_attn_weights[0][i].data[0]) + ",")
-        file.write("\n\n")
-        file.write(str(input_timestamps[0]))
-        file.write("\n\n")
-        for session_id in range(len(last_sessions_for_user)):
-            file.write(str(last_sessions_for_user[session_id][0][0]) + "\n")
-            for event_id in range(len(last_sessions_for_user[session_id])):
-                file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
-            file.write("\n")
-        file.write("\n\n\n\n\n\n")
-        file.close()
+            last_sessions_for_user = self.get_last_sessions_for_user(user_id)
+            for i in range(15):
+                file.write(str(inter_attn_weights[0][i].data[0]) + ",")
+            file.write("\n\n")
+            file.write(str(input_timestamps[0]))
+            file.write("\n\n")
+            for session_id in range(len(last_sessions_for_user)):
+                file.write(str(last_sessions_for_user[session_id][0][0]) + "\n")
+                for event_id in range(len(last_sessions_for_user[session_id])):
+                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
+                file.write("\n")
+            file.write("\n\n\n\n\n\n")
+            file.close()
+        except:
+            pass
 
     def log_attention_weights_intra(self, intra_attn_weights, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, sl, top_k_predictions, user_id, dataset, user_index):
-        intra_attn_weights = intra_attn_weights.transpose(1, 2)
-        file = open("intra_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
-        session_length = sl[user_index]
+        try:
+            intra_attn_weights = intra_attn_weights.transpose(1, 2)
+            file = open("intra_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+            session_length = sl[user_index]
 
-        file.write(str(session_length) + "\n")
-        for i in range(19):
-            file.write(str(top_k_predictions[user_index][i][0].data[0]) + ",")
-        file.write("\n\n")
-        last_sessions_for_user = self.get_last_sessions_for_user(user_id)
-        for session_id in range(len(last_sessions_for_user)):
-            for a in range(len(intra_attn_weights[user_index][session_id])):
-                file.write(str(intra_attn_weights[user_index][session_id][a].data[0]).format("%0.4f") + ",")
-            file.write("\n")
-            for event_id in range(len(last_sessions_for_user[session_id])):
-                file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
+            file.write(str(session_length) + "\n")
+            for i in range(19):
+                file.write(str(top_k_predictions[user_index][i][0].data[0]) + ",")
             file.write("\n\n")
-        file.write("\n\n\n\n\n\n")
-        file.close()
+            last_sessions_for_user = self.get_last_sessions_for_user(user_id)
+            for session_id in range(len(last_sessions_for_user)):
+                for a in range(len(intra_attn_weights[user_index][session_id])):
+                    file.write(str(intra_attn_weights[user_index][session_id][a].data[0]).format("%0.4f") + ",")
+                file.write("\n")
+                for event_id in range(len(last_sessions_for_user[session_id])):
+                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
+                file.write("\n\n")
+            file.write("\n\n\n\n\n\n")
+            file.close()
+        except:
+            pass
