@@ -30,7 +30,7 @@ use_hidden_state_attn = False
 use_delta_t_attn = False
 use_week_time_attn = False
 
-use_intra_attn = False
+use_intra_attn = True
 
 log_inter_attn = True
 log_intra_attn = True
@@ -180,22 +180,6 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
             if use_intra_attn:
                 intra_attn_weights = torch.cat((intra_attn_weights, attn_weights.unsqueeze(1)), 1)
 
-        
-        print("HEI")
-
-        show_memusage()
-        count = 0
-
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    #print(type(obj), obj.size())
-                    count += 1
-            except:
-                pass
-        print(count)
-        print("END HEI")
-
     if not use_intra_attn:
         intra_attn_weights = []
 
@@ -261,7 +245,7 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
 
     intra_hidden = inter_hidden
     for i in range(input.size(1)):
-        b = torch.LongTensor([i]).expand(input.size(0), 1)
+        b = Variable(torch.LongTensor([i]).expand(input.size(0), 1))
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, INTRA_INTERNAL_SIZE))
         if use_cuda:
             b = b.cuda()
@@ -339,37 +323,9 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
         batch_start_time = time.time()
 
-        print("PRE")
-
-        show_memusage()
-        count = 0
-
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    #print(type(obj), obj.size())
-                    count += 1
-            except:
-                pass
-        print(count)
-        print("END PRE")
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch)
 
-        print("POST")
-
-        show_memusage()
-        count = 0
-
-        for obj in gc.get_objects():
-            try:
-                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                    #print(type(obj), obj.size())
-                    count += 1
-            except:
-                pass
-        print(count)
-        print("END POST")
 
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
