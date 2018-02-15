@@ -257,4 +257,28 @@ def plot_user_avg_session_lengths_vs_accuracy_increase():
     #plt.xticks(np.arange(0, 361, 24))
     plt.show()
 
-plot_user_avg_session_lengths_vs_accuracy_increase()
+
+
+def time_between_first_and_last_session_per_user():
+    dataset = "lastfm"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
+    dataset = pickle.load(open(dataset_path, 'rb'))
+
+    trainset = dataset['trainset']
+    testset = dataset['testset']
+    train_session_lengths = dataset['train_session_lengths']
+    test_session_lengths = dataset['test_session_lengths']
+
+    per_user_unique_actions = {}
+    per_user_total_actions = {}
+
+    for i in range(len(trainset.items())):
+        per_user_total_actions[i] = 0
+
+    for k, v in trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        num_sessions = len(v)
+        print(trainset[k][num_sessions - 1])
+        delta_time = trainset[k][num_sessions - 1] - trainset[k][0]
+        print(delta_time)
+
+time_between_first_and_last_session_per_user()

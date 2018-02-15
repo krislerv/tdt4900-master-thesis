@@ -227,14 +227,14 @@ class IIRNNDataHandler:
         message = timestamp+'\n'+message
         return message
 
-    def log_test_stats(self, epoch_number, epoch_loss, stats, per_user_accuracies, per_session_length_accuracies):
+    def log_test_stats(self, epoch_number, epoch_loss, stats):
         try:
             timestamp = str(datetime.datetime.now())
             message = timestamp+'\n\tEpoch #: '+str(epoch_number)
             message += '\n\tEpoch loss: '+str(epoch_loss)+'\n'
             message += stats + "\n\n"
-            message += str(per_user_accuracies) + "\n\n"
-            message += str(per_session_length_accuracies)
+            #message += str(per_user_accuracies) + "\n\n"
+            #message += str(per_session_length_accuracies)
             logging.info(message)
         except:
             print("logging failed")

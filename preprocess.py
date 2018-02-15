@@ -4,12 +4,12 @@ import os
 import time
 
 runtime = time.time()
-reddit = "subreddit"
-lastfm = "lastfm new"
+reddit = "reddit-3-month"
+lastfm = "lastfm-1-month"
 
 create_lastfm_cet = False
 
-dataset = lastfm
+dataset = reddit
 
 home = os.path.expanduser('~')
 
@@ -17,10 +17,13 @@ home = os.path.expanduser('~')
 DATASET_DIR = home + '/datasets/'+dataset
 
 if dataset == lastfm:
-    DATASET_FILE = DATASET_DIR + '/userid-timestamp-artid-artname-traid-traname.tsv'
+    DATASET_FILE = home + '/datasets/' + 'userid-timestamp-artid-artname-traid-traname.tsv'
+    USER_INFO_FILE = home + '/datasets/' + 'userid-profile.tsv'
 elif dataset == reddit:
-    DATASET_FILE = DATASET_DIR + '/reddit_data.csv'
-DATASET_W_CONVERTED_TIMESTAMPS = DATASET_DIR + '/1_converted_timestamps.pickle'
+    DATASET_FILE = home + '/datasets/' + 'reddit_data.csv'
+#DATASET_W_CONVERTED_TIMESTAMPS = DATASET_DIR + '/1_converted_timestamps.pickle'
+DATASET_W_CONVERTED_TIMESTAMPS = home + '/datasets' + '/1_converted_timestamps.pickle'
+FILTERED_DATASET_W_CONVERTED_TIMESTAMPS = DATASET_DIR + '/filtered_timestamps.pickle'
 DATASET_USER_ARTIST_MAPPED = DATASET_DIR + '/2_user_artist_mapped.pickle'
 DATASET_USER_SESSIONS = DATASET_DIR + '/3_user_sessions.pickle'
 DATASET_TRAIN_TEST_SPLIT = DATASET_DIR + '/4_train_test_split.pickle'
@@ -29,7 +32,7 @@ DATASET_BPR_MF = DATASET_DIR + '/bpr-mf_train_test_split.pickle'
 if dataset == reddit:
     SESSION_TIMEDELTA = 60*60 # 1 hour
 elif dataset == lastfm:
-    SESSION_TIMEDELTA = 60*30 # 1 hours
+    SESSION_TIMEDELTA = 60*30 # 30 minutes
 
 MAX_SESSION_LENGTH = 20     # maximum number of actions in a session (or more precisely, how far into the future an action affects future actions. This is important for training, but when running, we can have as long sequences as we want! Just need to keep the hidden state and compute the next action)
 MAX_SESSION_LENGTH_PRE_SPLIT = MAX_SESSION_LENGTH * 2
@@ -90,7 +93,9 @@ def convert_timestamps_lastfm():
     dataset_list = []
     num_skipped = 0
     count = 0
-    user_info = open(DATASET_DIR + '/userid-profile.tsv', 'r', buffering=10000, encoding='utf8')
+    t_skip = 0
+    t_non_skip = 0
+    user_info = open(USER_INFO_FILE, 'r', buffering=10000, encoding='utf8')
     with open(DATASET_FILE, 'rt', buffering=10000, encoding='utf8') as dataset:
         for line in dataset:
             line = line.split('\t')
@@ -98,6 +103,9 @@ def convert_timestamps_lastfm():
             timestamp   = (dateutil.parser.parse(line[1])).timestamp()
             artist_id   = line[2]
             artist_name = line[3]
+            if user_id != last_user_id:
+                last_user_id = user_id
+                print(user_id)
             if create_lastfm_cet and (user_id != last_user_id or last_user_id == ""):
                 count += 1
                 profile = user_info.readline()
@@ -119,12 +127,38 @@ def convert_timestamps_lastfm():
 
     dataset_list = list(reversed(dataset_list))
 
-    print("NUM SKIPPED: ", num_skipped)
-
     save_pickle(dataset_list, DATASET_W_CONVERTED_TIMESTAMPS)
 
-def map_user_and_artist_id_to_labels():
+def filter_timestamps():
+    # filter out events to only include those in a given interval, does this after the list has been read and reversed
+    new_dataset_list = []
+    last_user_id = ""
+    first_user_timestamp = ""
+    t_skip = 0
+    t_non_skip = 0
+
     dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
+
+    for line in dataset_list:
+        user_id     = line[0]
+        timestamp   = line[1]
+        if last_user_id != user_id:
+            first_user_timestamp = timestamp
+            last_user_id = user_id
+        #if timestamp - first_user_timestamp > 25e5:  # about one month
+        #if timestamp - first_user_timestamp > 5e6:  # about two months
+        if timestamp - first_user_timestamp > 8e6: # about three months
+            t_skip += 1
+            continue
+        t_non_skip += 1
+        new_dataset_list.append(line)
+
+    print("t_skip", t_skip, t_non_skip)
+
+    save_pickle(new_dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
+
+def map_user_and_artist_id_to_labels():
+    dataset_list = load_pickle(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
     artist_map = {}
     artist_name_map = {}
     user_map = {}
@@ -374,12 +408,17 @@ def create_bpr_mf_sets():
     
     save_pickle(pickle_dict , DATASET_BPR_MF)
 
+
 if not file_exists(DATASET_W_CONVERTED_TIMESTAMPS):
     print("Converting timestamps.")
     if dataset == reddit:
         convert_timestamps_reddit()
     elif dataset == lastfm:
         convert_timestamps_lastfm()
+
+if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
+    print("Filtering timestamps")
+    filter_timestamps()
 
 if not file_exists(DATASET_USER_ARTIST_MAPPED):
     print("Mapping user and artist IDs to labels.")

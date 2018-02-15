@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import random
 
 class Embed(nn.Module):
     def __init__(self, input_size, embedding_size):
@@ -15,12 +16,14 @@ class Embed(nn.Module):
         return output
 
 class InterRNN(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False, gpu_no=0):
         super(InterRNN, self).__init__()
 
         self.hidden_size = hidden_size
         self.n_layers = n_layers
         self.max_session_representations = max_session_representations
+
+        self.gpu_no = gpu_no
 
         self.use_hidden_state_attn = use_hidden_state_attn
         self.use_delta_t_attn = use_delta_t_attn
@@ -48,7 +51,7 @@ class InterRNN(nn.Module):
             self.index_list = []
             for i in range(max_session_representations):
                 self.index_list.append(i)
-            self.index_list = torch.LongTensor(self.index_list).cuda()
+            self.index_list = torch.LongTensor(self.index_list).cuda(self.gpu_no)
 
     def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps):
         # gets the output of the last non-zero session representation
@@ -106,11 +109,11 @@ class InterRNN(nn.Module):
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda()
+            return hidden.cuda(self.gpu_no)
         return hidden
 
 class IntraRNN(nn.Module):
-    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, use_attn):
+    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, use_attn=False, use_delta_t_attn=False, gpu_no=0):
         super(IntraRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -118,42 +121,101 @@ class IntraRNN(nn.Module):
         self.embedding_size = embedding_size
         self.max_session_representations = max_session_representations
 
+        self.gpu_no = gpu_no
+
         self.use_attn = use_attn
+        self.use_delta_t_attn = use_delta_t_attn
 
         #self.embedding = nn.Embedding(n_items, embedding_size)
         #self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
         #self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
-        self.gru = nn.GRU(embedding_size * (1 + self.use_attn), hidden_size, n_layers, dropout=dropout, batch_first=True)
+        self.gru = nn.GRU(3 * embedding_size if use_attn else embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
-        self.linear = nn.Linear(embedding_size, n_items)
+        self.linear = nn.Linear(hidden_size, n_items)
 
         if self.use_attn:
-            self.wa = nn.Parameter(torch.FloatTensor(embedding_size, hidden_size))
-            self.wa.data.copy_(torch.zeros(embedding_size, hidden_size).uniform_(-1, 1))
+            self.wa = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
+            self.wa.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
             self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
             self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
-            self.va = nn.Parameter(torch.FloatTensor(1, hidden_size))
-            self.va.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
-            self.fff = nn.Parameter(torch.FloatTensor(2 * self.hidden_size, self.hidden_size))
-            self.fff.data.copy_(torch.zeros(2 * self.hidden_size, self.hidden_size).uniform_(-1, 1))
+            #self.va = nn.Parameter(torch.FloatTensor(1, 2 * hidden_size))
+            #self.va.data.copy_(torch.zeros(1, 2 * hidden_size).uniform_(-1, 1))
+            #self.fff = nn.Parameter(torch.FloatTensor((3 if use_delta_t_attn else 2) * self.hidden_size, 2 * self.hidden_size))
+            #self.fff.data.copy_(torch.zeros((3 if use_delta_t_attn else 2) * self.hidden_size, 2 * self.hidden_size).uniform_(-1, 1))
 
-    def forward(self, input, input_embedding, hidden, inter_output):
+            #self.va = nn.Linear(2 * self.hidden_size, 1, bias=False)
+            #self.fff = nn.Linear(2 * self.hidden_size, 2 * self.hidden_size, bias=False)
+            self.va = nn.Linear(self.hidden_size, 1, bias=False)
+            self.fff = nn.Linear((3 if use_delta_t_attn else 2) * self.hidden_size, self.hidden_size, bias=False)
+
+            self.lin1 = nn.Linear(hidden_size, 1)
+            self.lin2 = nn.Linear(hidden_size, 1)
+
+            self.hidden_linear = nn.Linear(hidden_size, hidden_size)
+            self.inter_linear = nn.Linear(hidden_size, hidden_size)
+
+            self.delta_embedding = nn.Embedding(169, embedding_size)
+            self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
+
+    def forward(self, input, input_embedding, hidden, inter_output, delta_t_h):
         #embedded_input = self.embedding(input)
         embedded_input = self.dropout1(input_embedding)
 
         if self.use_attn:
+            ### ALL
+            delta_t_h = self.delta_embedding(delta_t_h)
             hidden_t = hidden.transpose(0, 1)
+
+            ### BASELINE
             #wasi = torch.bmm(hidden_t, self.wa.expand(input.size(0), self.hidden_size, self.hidden_size))
             #hjua = torch.bmm(inter_output, self.ua.expand(input.size(0), self.hidden_size, self.hidden_size))
-            #print(wasi.size())
-            #print(hjua.size())
-            cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output), dim=2)
-            result = torch.tanh(torch.bmm(cat, self.fff.expand(input.size(0), 2 * self.hidden_size, self.hidden_size)))
+            if self.use_delta_t_attn:
+                cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output, delta_t_h), dim=2)
+            else:
+                cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output), dim=2)
+            #result = torch.tanh(torch.bmm(cat, self.fff.expand(input.size(0), (3 if self.use_delta_t_attn else 2) * self.hidden_size, self.hidden_size)))
+            result = torch.tanh(self.fff(cat))
             #result = torch.tanh(wasi.expand(input.size(0), self.max_session_representations, self.hidden_size) + hjua)
-            result_t = result.transpose(1, 2)
-            energies = torch.bmm(self.va.expand(input.size(0), 1, self.hidden_size), result_t)
-            attn_weights = F.softmax(energies.squeeze())
+            #result_t = result.transpose(1, 2)
+            energies = self.va(result)
+            attn_weights = F.softmax(energies.squeeze(), dim=1)
+
+            # finds the top k attention weights and sets all other attention weights to zero
+            #k = 3
+            #attn_weights = torch.ge(attn_weights, torch.gather(attn_weights, 1, torch.index_select(torch.topk(attn_weights, k)[1], 1, Variable(torch.LongTensor([k-1])).cuda(self.gpu_no)))).float() * attn_weights
+
+
+
+            ### scale, sum, tanh
+            #a = self.lin1(hidden_t)
+            #b = self.lin2(inter_output)
+            #c = a + b
+            #result = torch.tanh(c)
+
+
+            ### cat, scale, tanh
+            #a = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output, delta_t_h), dim=2)
+            #c = self.lin1(a)
+            #result = torch.tanh(c)
+
+
+            ### sum, scale, tanh (with extra learnable weights)
+            #hidden_t_1 = self.hidden_linear(hidden_t)
+            #inter_output_1 = self.inter_linear(inter_output)
+            #a = hidden_t_1 + inter_output_1 # + delta_t_h
+            #c = self.lin1(a)
+            #result = torch.tanh(c)
+
+
+            
+            ### ALL NON-BASELINE
+            #result_t = result.transpose(1, 2)
+            #attn_weights = F.softmax(result_t.squeeze(), dim=1)
+
+
+
+            ### ALL
             context = torch.bmm(attn_weights.unsqueeze(1), inter_output)
             gru_input = torch.cat((embedded_input, context), 2)
             gru_output, hidden = self.gru(gru_input, hidden)
@@ -168,5 +230,5 @@ class IntraRNN(nn.Module):
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
-            return hidden.cuda()
+            return hidden.cuda(self.gpu_no)
         return hidden

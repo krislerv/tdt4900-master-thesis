@@ -18,6 +18,12 @@ class Tester:
         self.correct_predictions_per_session_length = [0]*30
         self.total_predictions_per_session_length = [0]*30
 
+        self.avg_recall_bucket = [0] * 169
+        self.avg_total_bucket = [0] * 169
+
+        self.std_recall_bucket = [0] * 169
+        self.std_total_bucket = [0] * 169
+
     def get_rank(self, target, predictions):
         for i in range(len(predictions)):
             if target == predictions[i]:
@@ -25,7 +31,7 @@ class Tester:
 
         raise Exception("could not find target in sequence")
 
-    def evaluate_sequence(self, predicted_sequence, target_sequence, seq_len, user_id):
+    def evaluate_sequence(self, predicted_sequence, target_sequence, seq_len, user_id, avg_delta_t, std_delta_t):
         for i in range(seq_len):
             target_item = target_sequence[i]
             k_predictions = predicted_sequence[i]
@@ -36,20 +42,28 @@ class Tester:
                     self.recall[i][j] += 1
                     inv_rank = 1.0/self.get_rank(target_item, k_predictions[:k].data)
                     self.mrr[i][j] += inv_rank
+                    """
                     if k == 20:
                         self.correct_predictions_per_user[user_id] += 1
                         self.correct_predictions_per_session_length[seq_len] += 1
-            self.total_predictions_per_user[user_id] += 1
+                        self.avg_recall_bucket[avg_delta_t] += 1
+                        self.std_recall_bucket[std_delta_t] += 1
+                    """
+            self.avg_total_bucket[avg_delta_t] += 1
+            self.std_total_bucket[std_delta_t] += 1
+            #self.total_predictions_per_user[user_id] += 1
             self.i_count[i] += 1
         self.total_predictions_per_session_length[seq_len] += seq_len
 
 
-    def evaluate_batch(self, predictions, targets, sequence_lengths, user_list):
+    def evaluate_batch(self, predictions, targets, sequence_lengths, user_list, avg_delta_t, std_delta_t):
         for batch_index in range(len(predictions)):
             predicted_sequence = predictions[batch_index]
             target_sequence = targets[batch_index]
             user_id = user_list[batch_index]
-            self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index], user_id)
+            sequence_avg_delta_t = avg_delta_t[batch_index].data[0]
+            sequence_std_delta_t = std_delta_t[batch_index].data[0]
+            self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index], user_id, sequence_avg_delta_t, sequence_std_delta_t)
     
     def format_score_string(self, score_type, score):
         tabs = '\t'
@@ -82,6 +96,7 @@ class Tester:
         recall5 = recall_k[0]
         recall20 = recall_k[2]
 
+        """
         per_user_accuracies = []
         for i in range(self.num_users):
             if self.total_predictions_per_user[i] == 0:
@@ -95,8 +110,13 @@ class Tester:
                 per_session_length_accuracies.append(0)
             else:
                 per_session_length_accuracies.append(self.correct_predictions_per_session_length[i] / self.total_predictions_per_session_length[i])
+        """
 
-        return score_message, recall5, recall20, per_user_accuracies, per_session_length_accuracies
+        print(self.avg_recall_bucket, self.avg_total_bucket)
+        print()
+        print(self.std_recall_bucket, self.std_total_bucket)
+
+        return score_message, recall5, recall20#, per_user_accuracies, per_session_length_accuracies
 
     def get_stats_and_reset(self):
         message = self.get_stats()
