@@ -22,7 +22,7 @@ class IIRNNDataHandler:
         self.testset = dataset['testset']
         self.train_session_lengths = dataset['train_session_lengths']
         self.test_session_lengths = dataset['test_session_lengths']
-    
+
         self.num_users = len(self.trainset)
         if len(self.trainset) != len(self.testset):
             raise Exception("""Testset and trainset have different 

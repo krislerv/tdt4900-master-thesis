@@ -5,11 +5,11 @@ import time
 
 runtime = time.time()
 reddit = "reddit-3-month"
-lastfm = "lastfm-1-month"
+lastfm = "lastfm-test"
 
 create_lastfm_cet = False
 
-dataset = reddit
+dataset = lastfm
 
 home = os.path.expanduser('~')
 
@@ -130,7 +130,10 @@ def convert_timestamps_lastfm():
     save_pickle(dataset_list, DATASET_W_CONVERTED_TIMESTAMPS)
 
 def filter_timestamps():
-    # filter out events to only include those in a given interval, does this after the list has been read and reversed
+    ##########################
+    # filter out events to only include those in a given interval
+    ##########################
+    """
     new_dataset_list = []
     last_user_id = ""
     first_user_timestamp = ""
@@ -156,9 +159,12 @@ def filter_timestamps():
     print("t_skip", t_skip, t_non_skip)
 
     save_pickle(new_dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
+    """
+    dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
+    save_pickle(dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
 
 def map_user_and_artist_id_to_labels():
-    dataset_list = load_pickle(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
+    dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
     artist_map = {}
     artist_name_map = {}
     user_map = {}
@@ -178,9 +184,9 @@ def map_user_and_artist_id_to_labels():
         dataset_list[i][0] = user_map[user_id]
         dataset_list[i][2] = artist_map[artist_id]
 
-    file = open(dataset + "_map.txt", "w", encoding="utf-8")
-    for k, v in artist_name_map.items():
-        file.write(str(k) + " " + str(v) + "\n")
+    #file = open(dataset + "_map.txt", "w", encoding="utf-8")
+    #for k, v in artist_name_map.items():
+    #    file.write(str(k) + " " + str(v) + "\n")
     
     # Save to pickle file
     save_pickle(dataset_list, DATASET_USER_ARTIST_MAPPED)
@@ -289,6 +295,14 @@ def sort_and_split_usersessions():
     for user in to_be_removed:
         new_user_sessions.pop(user)
 
+    to_be_removed =  user_avg_session_length_filter(new_user_sessions, False)
+    for user in to_be_removed:
+        new_user_sessions.pop(user)
+
+    to_be_removed =  user_avg_session_count_filter(new_user_sessions, False)
+    for user in to_be_removed:
+        new_user_sessions.pop(user)
+
 
     # Do a remapping to account for removed data
     print("remapping to account for removed data...")
@@ -318,6 +332,51 @@ def sort_and_split_usersessions():
         file.write(str(k) + " " + str(v) + "\n")
 
     save_pickle(nus, DATASET_USER_SESSIONS)
+
+# filters out those users that have a higher than average average session length (or lower than average if the higher parameter is set to false)
+def user_avg_session_length_filter(new_user_sessions, higher):
+    user_avg_session_lengths = [0]*1000
+    for k, v in new_user_sessions.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        user_event_count = 0
+        user_session_count = 0
+        for session in v:
+            user_event_count += len(session)
+            user_session_count += 1
+
+        user_avg_session_lengths[k] = user_event_count / user_session_count
+
+    avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py
+
+    to_be_removed = []
+
+    for i in range(len(user_avg_session_lengths)):
+        if higher and user_avg_session_lengths[i] > avg_session_length:
+            to_be_removed.append(i)
+        elif not higher and user_avg_session_lengths[i] < avg_session_length and user_avg_session_lengths[i] > 0:
+            to_be_removed.append(i)
+
+    print(to_be_removed)
+    return to_be_removed
+
+def user_avg_session_count_filter(new_user_sessions, higher):
+    user_session_counts = [0]*1000
+    for k, v in new_user_sessions.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        user_session_counts[k] = len(v)
+
+
+    avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py
+
+    to_be_removed = []
+
+    for i in range(len(user_session_counts)):
+        if higher and user_session_counts[i] > avg_session_count:
+            to_be_removed.append(i)
+        elif not higher and user_session_counts[i] < avg_session_count and user_session_counts[i] > 0:
+            to_be_removed.append(i)
+
+    print(to_be_removed)
+    return to_be_removed
+
 
 
 def get_session_lengths(dataset):
@@ -416,9 +475,9 @@ if not file_exists(DATASET_W_CONVERTED_TIMESTAMPS):
     elif dataset == lastfm:
         convert_timestamps_lastfm()
 
-if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
-    print("Filtering timestamps")
-    filter_timestamps()
+#if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
+#    print("Filtering timestamps")
+#    filter_timestamps()
 
 if not file_exists(DATASET_USER_ARTIST_MAPPED):
     print("Mapping user and artist IDs to labels.")

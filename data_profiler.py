@@ -85,9 +85,8 @@ def timestamp_distribution():
     plt.show()
 
 def avg_session_length():
-    dataset = "lastfm cet"
-    print("Dataset:", dataset)
-    dataset_path = dataset + '/4_train_test_split.pickle'
+    dataset = "lastfm-full"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
     dataset = pickle.load(open(dataset_path, 'rb'))
 
     train_session_lengths = dataset['train_session_lengths']
@@ -114,8 +113,8 @@ def avg_session_length():
             test_sum += session_length
             test_count += 1
 
-    print("Train avg session length:", test_sum/test_count)
-    print("Train session count:", test_count)
+    print("Test avg session length:", test_sum/test_count)
+    print("Test session count:", test_count)
 
     print("Total avg session length:", sum/count)
     print("Total session count:", count)
@@ -281,4 +280,69 @@ def time_between_first_and_last_session_per_user():
         delta_time = trainset[k][num_sessions - 1] - trainset[k][0]
         print(delta_time)
 
-time_between_first_and_last_session_per_user()
+def avg_session_count():
+    dataset = "lastfm-full"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
+    dataset = pickle.load(open(dataset_path, 'rb'))
+
+    trainset = dataset['trainset']
+    testset = dataset['testset']
+    train_session_lengths = dataset['train_session_lengths']
+    test_session_lengths = dataset['test_session_lengths']
+
+    tr_num_users = 0
+    num_sessions = 0
+
+    for k, v in trainset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        tr_num_users += 1
+        num_sessions += len(v)
+
+    te_num_users = 0
+
+    for k, v in testset.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        te_num_users += 1
+        num_sessions += len(v)
+
+    assert tr_num_users == te_num_users
+
+    print("Average session count: ", num_sessions / tr_num_users)
+
+def users_with_higher_than_average_session_lengths():
+    dataset = "lastfm-full"
+    dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
+    dataset = pickle.load(open(dataset_path, 'rb'))
+
+    trainset = dataset['trainset']
+    testset = dataset['testset']
+    train_session_lengths = dataset['train_session_lengths']
+    test_session_lengths = dataset['test_session_lengths']
+
+    user_event_counts = [0]*1000
+    user_session_counts = [0]*1000
+
+    for k, v in train_session_lengths.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        for session_length in v:
+            user_event_counts[k] += session_length
+            user_session_counts[k] += 1
+
+    for k, v in test_session_lengths.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
+        for session_length in v:
+            user_event_counts[k] += session_length
+            user_session_counts[k] += 1
+
+
+    user_avg_session_lengths = []
+
+    for i in range(len(user_event_counts)):
+        if user_session_counts[i] == 0:
+            continue
+        user_avg_session_lengths.append(user_event_counts[i]/user_session_counts[i])
+
+    print(len(user_avg_session_lengths))
+
+
+    print("Per user average session lengths: ", user_avg_session_lengths)
+
+avg_session_length()
+avg_session_count()
+#users_with_higher_than_average_session_lengths()

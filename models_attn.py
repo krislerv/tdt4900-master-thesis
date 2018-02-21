@@ -129,16 +129,16 @@ class IntraRNN(nn.Module):
         #self.embedding = nn.Embedding(n_items, embedding_size)
         #self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
         #self.embedding.weight.data[0] = torch.zeros(embedding_size) # ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
-        self.gru = nn.GRU(3 * embedding_size if use_attn else embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
+        self.gru = nn.GRU(2 * embedding_size if use_attn else embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
         self.linear = nn.Linear(hidden_size, n_items)
 
         if self.use_attn:
-            self.wa = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
-            self.wa.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
-            self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
-            self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
+            #self.wa = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
+            #self.wa.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
+            #self.ua = nn.Parameter(torch.FloatTensor(hidden_size, hidden_size))
+            #self.ua.data.copy_(torch.zeros(hidden_size, hidden_size).uniform_(-1, 1))
             #self.va = nn.Parameter(torch.FloatTensor(1, 2 * hidden_size))
             #self.va.data.copy_(torch.zeros(1, 2 * hidden_size).uniform_(-1, 1))
             #self.fff = nn.Parameter(torch.FloatTensor((3 if use_delta_t_attn else 2) * self.hidden_size, 2 * self.hidden_size))
@@ -146,8 +146,10 @@ class IntraRNN(nn.Module):
 
             #self.va = nn.Linear(2 * self.hidden_size, 1, bias=False)
             #self.fff = nn.Linear(2 * self.hidden_size, 2 * self.hidden_size, bias=False)
+            self.wa = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+            self.ua = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
             self.va = nn.Linear(self.hidden_size, 1, bias=False)
-            self.fff = nn.Linear((3 if use_delta_t_attn else 2) * self.hidden_size, self.hidden_size, bias=False)
+            self.fff = nn.Linear((3 if use_delta_t_attn else 2) * self.hidden_size, 1, bias=False)
 
             self.lin1 = nn.Linear(hidden_size, 1)
             self.lin2 = nn.Linear(hidden_size, 1)
@@ -158,28 +160,47 @@ class IntraRNN(nn.Module):
             self.delta_embedding = nn.Embedding(169, embedding_size)
             self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
 
-    def forward(self, input, input_embedding, hidden, inter_output, delta_t_h):
+            self.user_embedding = nn.Embedding(1000, embedding_size) # TODO: don't hardcode num_users
+            self.user_embedding.weight.data.copy_(torch.zeros(1000, embedding_size).uniform_(-1, 1))
+
+            self.inter_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
+            self.hidden_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
+            self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
+
+
+    def forward(self, input, input_embedding, hidden, inter_output, delta_t_h, user_list):
         #embedded_input = self.embedding(input)
         embedded_input = self.dropout1(input_embedding)
 
         if self.use_attn:
             ### ALL
+            #user_list = self.user_embedding(user_list)
             delta_t_h = self.delta_embedding(delta_t_h)
             hidden_t = hidden.transpose(0, 1)
 
             ### BASELINE
-            #wasi = torch.bmm(hidden_t, self.wa.expand(input.size(0), self.hidden_size, self.hidden_size))
-            #hjua = torch.bmm(inter_output, self.ua.expand(input.size(0), self.hidden_size, self.hidden_size))
             if self.use_delta_t_attn:
                 cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output, delta_t_h), dim=2)
             else:
-                cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output), dim=2)
-            #result = torch.tanh(torch.bmm(cat, self.fff.expand(input.size(0), (3 if self.use_delta_t_attn else 2) * self.hidden_size, self.hidden_size)))
-            result = torch.tanh(self.fff(cat))
-            #result = torch.tanh(wasi.expand(input.size(0), self.max_session_representations, self.hidden_size) + hjua)
-            #result_t = result.transpose(1, 2)
+                inter_output_a = Variable(torch.zeros(input.size(0), self.max_session_representations, self.hidden_size)).cuda()
+                hidden_t_a = Variable(torch.zeros(input.size(0), 1, self.hidden_size)).cuda()
+                #for i in range(input.size(0)):
+                #    inter_output_a[i] = self.inter_params[user_list[i].data[0]](inter_output[i])
+                #    hidden_t_a[i] = self.hidden_params[user_list[i].data[0]](hidden_t[i])
+
+
+                hidden_t_a = self.wa(hidden_t)
+                inter_output_a = self.ua(inter_output)
+                #cat = torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2)
+            result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)
+            #energies = Variable(torch.zeros(input.size(0), self.max_session_representations, 1)).cuda()
+            #for i in range(input.size(0)):
+            #    energies[i] = self.scale_params[user_list[i].data[0]](result[i])
             energies = self.va(result)
             attn_weights = F.softmax(energies.squeeze(), dim=1)
+
+            #result = torch.tanh(self.fff(cat))
+            #attn_weights = F.softmax(result.squeeze(), dim=1)
 
             # finds the top k attention weights and sets all other attention weights to zero
             #k = 3
@@ -212,7 +233,6 @@ class IntraRNN(nn.Module):
             ### ALL NON-BASELINE
             #result_t = result.transpose(1, 2)
             #attn_weights = F.softmax(result_t.squeeze(), dim=1)
-
 
 
             ### ALL
