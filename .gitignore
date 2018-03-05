@@ -111,3 +111,6 @@ testlog/
 
 # attention weight logs
 attn_weights/
+
+# text files
+*.txt

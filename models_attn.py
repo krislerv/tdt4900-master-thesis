@@ -113,7 +113,7 @@ class InterRNN(nn.Module):
         return hidden
 
 class IntraRNN(nn.Module):
-    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, use_attn=False, use_delta_t_attn=False, gpu_no=0):
+    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, use_attn=False, use_delta_t_attn=False, use_per_user_intra_attn=False, gpu_no=0):
         super(IntraRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -125,6 +125,7 @@ class IntraRNN(nn.Module):
 
         self.use_attn = use_attn
         self.use_delta_t_attn = use_delta_t_attn
+        self.use_per_user_intra_attn = use_per_user_intra_attn
 
         #self.embedding = nn.Embedding(n_items, embedding_size)
         #self.embedding.weight.data.copy_(torch.zeros(n_items, embedding_size).uniform_(-1, 1))
@@ -163,9 +164,10 @@ class IntraRNN(nn.Module):
             self.user_embedding = nn.Embedding(1000, embedding_size) # TODO: don't hardcode num_users
             self.user_embedding.weight.data.copy_(torch.zeros(1000, embedding_size).uniform_(-1, 1))
 
-            self.inter_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
-            self.hidden_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
-            self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
+            if use_per_user_intra_attn:
+                self.inter_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
+                self.hidden_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
+                self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
 
 
     def forward(self, input, input_embedding, hidden, inter_output, delta_t_h, user_list):
@@ -182,21 +184,23 @@ class IntraRNN(nn.Module):
             if self.use_delta_t_attn:
                 cat = torch.cat((hidden_t.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output, delta_t_h), dim=2)
             else:
-                inter_output_a = Variable(torch.zeros(input.size(0), self.max_session_representations, self.hidden_size)).cuda()
-                hidden_t_a = Variable(torch.zeros(input.size(0), 1, self.hidden_size)).cuda()
-                #for i in range(input.size(0)):
-                #    inter_output_a[i] = self.inter_params[user_list[i].data[0]](inter_output[i])
-                #    hidden_t_a[i] = self.hidden_params[user_list[i].data[0]](hidden_t[i])
-
-
-                hidden_t_a = self.wa(hidden_t)
-                inter_output_a = self.ua(inter_output)
-                #cat = torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2)
-            result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)
-            #energies = Variable(torch.zeros(input.size(0), self.max_session_representations, 1)).cuda()
-            #for i in range(input.size(0)):
-            #    energies[i] = self.scale_params[user_list[i].data[0]](result[i])
-            energies = self.va(result)
+                if self.use_per_user_intra_attn:
+                    inter_output_a = Variable(torch.zeros(input.size(0), self.max_session_representations, self.hidden_size)).cuda(self.gpu_no)
+                    hidden_t_a = Variable(torch.zeros(input.size(0), 1, self.hidden_size)).cuda(self.gpu_no)
+                    for i in range(input.size(0)):
+                        inter_output_a[i] = self.inter_params[user_list[i].data[0]](inter_output[i])
+                        hidden_t_a[i] = self.hidden_params[user_list[i].data[0]](hidden_t[i])
+                else:
+                    hidden_t_a = self.wa(hidden_t)
+                    inter_output_a = self.ua(inter_output)
+            #result = torch.tanh(torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2))  # sum last hidden and inter output
+            result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)                      # concat last hidden and inter output
+            if self.use_per_user_intra_attn:
+                energies = Variable(torch.zeros(input.size(0), self.max_session_representations, 1)).cuda(self.gpu_no)
+                for i in range(input.size(0)):
+                    energies[i] = self.scale_params[user_list[i].data[0]](result[i])
+            else:
+                energies = self.va(result)
             attn_weights = F.softmax(energies.squeeze(), dim=1)
 
             #result = torch.tanh(self.fff(cat))
