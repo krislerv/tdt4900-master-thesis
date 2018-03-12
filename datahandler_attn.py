@@ -297,12 +297,13 @@ class IIRNNDataHandler:
         except:
             pass
 
-    def log_attention_weights_intra(self, intra_attn_weights, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, sl, top_k_predictions, user_id, dataset, user_index):
+    def log_attention_weights_intra(self, intra_attn_weights, run_name, sl, top_k_predictions, user_id, user_index):
         try:
             intra_attn_weights = intra_attn_weights.transpose(1, 2)
-            file = open("intra_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+            file = open("intra_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
             session_length = sl[user_index]
 
+            file.write(str(user_id))
             file.write(str(session_length) + "\n")
             for i in range(19):
                 file.write(str(top_k_predictions[user_index][i][0].data[0]) + ",")
@@ -310,7 +311,7 @@ class IIRNNDataHandler:
             last_sessions_for_user = self.get_last_sessions_for_user(user_id)
             for session_id in range(len(last_sessions_for_user)):
                 for a in range(len(intra_attn_weights[user_index][session_id])):
-                    file.write(str(intra_attn_weights[user_index][session_id][a].data[0]).format("%0.4f") + ",")
+                    file.write(str(intra_attn_weights[user_index][session_id][a].data[0]) + ",")
                 file.write("\n")
                 for event_id in range(len(last_sessions_for_user[session_id])):
                     file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")

@@ -5,7 +5,7 @@ import time
 
 runtime = time.time()
 reddit = "reddit-3-month"
-lastfm = "lastfm-test"
+lastfm = "lastfm-high-high-2"
 
 create_lastfm_cet = False
 
@@ -184,9 +184,9 @@ def map_user_and_artist_id_to_labels():
         dataset_list[i][0] = user_map[user_id]
         dataset_list[i][2] = artist_map[artist_id]
 
-    #file = open(dataset + "_map.txt", "w", encoding="utf-8")
-    #for k, v in artist_name_map.items():
-    #    file.write(str(k) + " " + str(v) + "\n")
+    file = open(dataset + "_map.txt", "w", encoding="utf-8")
+    for k, v in artist_name_map.items():
+        file.write(str(k) + " " + str(v) + "\n")
     
     # Save to pickle file
     save_pickle(dataset_list, DATASET_USER_ARTIST_MAPPED)

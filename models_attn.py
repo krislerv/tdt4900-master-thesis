@@ -168,6 +168,10 @@ class IntraRNN(nn.Module):
                 self.inter_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
                 self.hidden_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
                 self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
+                self.linear_test1_params = nn.ModuleList([nn.Linear(2 * hidden_size, hidden_size) for i in range(1000)])
+
+            self.linear_test1 = nn.Linear(2*hidden_size, hidden_size)
+            self.linear_test2 = nn.Linear(2*hidden_size, hidden_size)
 
 
     def forward(self, input, input_embedding, hidden, inter_output, delta_t_h, user_list):
@@ -187,14 +191,18 @@ class IntraRNN(nn.Module):
                 if self.use_per_user_intra_attn:
                     inter_output_a = Variable(torch.zeros(input.size(0), self.max_session_representations, self.hidden_size)).cuda(self.gpu_no)
                     hidden_t_a = Variable(torch.zeros(input.size(0), 1, self.hidden_size)).cuda(self.gpu_no)
+                    result = Variable(torch.zeros(input.size(0), self.max_session_representations, self.hidden_size)).cuda(self.gpu_no)
                     for i in range(input.size(0)):
                         inter_output_a[i] = self.inter_params[user_list[i].data[0]](inter_output[i])
                         hidden_t_a[i] = self.hidden_params[user_list[i].data[0]](hidden_t[i])
+                        result[i] = torch.tanh(self.linear_test1_params[user_list[i].data[0]](torch.cat((hidden_t_a[i].expand(self.max_session_representations, self.hidden_size), inter_output_a[i]), dim=1)))
                 else:
                     hidden_t_a = self.wa(hidden_t)
                     inter_output_a = self.ua(inter_output)
-            #result = torch.tanh(torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2))  # sum last hidden and inter output
-            result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)                      # concat last hidden and inter output
+                    #hidden_t_a = hidden_t
+                    #inter_output_a = inter_output
+                    result = torch.tanh(self.linear_test1(torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2)))  # concat last hidden and inter output
+                    #result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)                      # sum last hidden and inter output
             if self.use_per_user_intra_attn:
                 energies = Variable(torch.zeros(input.size(0), self.max_session_representations, 1)).cuda(self.gpu_no)
                 for i in range(input.size(0)):

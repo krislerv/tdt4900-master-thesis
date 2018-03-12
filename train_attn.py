@@ -20,7 +20,7 @@ import gc
 
 # datasets
 reddit = "reddit-2-month"
-lastfm = "lastfm-3-months"
+lastfm = "lastfm-low-low"
 dataset = lastfm
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
@@ -38,12 +38,12 @@ use_per_user_intra_attn = True # not used if use_intra_attn is False
 
 # logging of attention weights
 log_inter_attn = False
-log_intra_attn = False
+log_intra_attn = True
 
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = False
-resume_model_name = "2018-02-28-12-01-26-testing-attn-rnn-lastfm-3-months-False-False-False"
+resume_model = True
+resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-False-True"    # unused if resume_model is False
 
 # GPU settings
 use_cuda = True
@@ -58,8 +58,8 @@ DATE_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
 TIME_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%H-%M-%S')
 if resume_model:
     RUN_NAME = resume_model_name
-else:
-    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset + '-' + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn)
+else:   # pre 2018-03-06: Three boolean values were inter attn mechanisms, post: they are intra attn mechanisms
+    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset + '-' + str(use_intra_attn) + '-' + str(user_intra_delta_t_attn) + '-' + str(use_per_user_intra_attn)
 LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
@@ -84,7 +84,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 60
+BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data
@@ -99,7 +99,7 @@ else:
     message += dataset + " with average of embeddings\n"
 message += "DATASET: " + dataset + " MODEL: attn-RNN"
 message += "\nuse_hidden_state_attn=" + str(use_hidden_state_attn) + " use_delta_t_attn=" + str(use_delta_t_attn) + " use_week_time_attn=" + str(use_week_time_attn)
-message += "\nuse_intra_attn=" + str(use_intra_attn) + " user_intra_delta_t_attn=" + str(user_intra_delta_t_attn)
+message += "\nuse_intra_attn=" + str(use_intra_attn) + " user_intra_delta_t_attn=" + str(user_intra_delta_t_attn) + " use_per_user_intra_attn=" + str(use_per_user_intra_attn)
 message += "\nCONFIG: N_ITEMS=" + str(N_ITEMS) + " BATCH_SIZE=" + str(BATCH_SIZE)
 message += "\nINTRA_INTERNAL_SIZE=" + str(INTRA_INTERNAL_SIZE) + " INTER_INTERNAL_SIZE=" + str(INTER_INTERNAL_SIZE)
 message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SIZE)
@@ -373,13 +373,7 @@ while epoch <= MAX_EPOCHS:
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
             datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps, dataset)
 
-        # log intra attention weights
-        if log_intra_attn and use_intra_attn and _batch_number % 1000 == 0:
-            for i in range(len(user_list)):
-                if inter_session_seq_length[i] == 15 and sl[i] > 5:
-                    datahandler.log_attention_weights_intra(intra_attn_weights, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, sl, top_k_predictions, user_list[i], dataset, i)
-
-
+        
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
         epoch_loss += batch_loss
@@ -416,6 +410,12 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
 
         batch_predictions, sess_rep, inter_attn_weights, intra_attn_weights, avg_delta_t, std_delta_t = predict(xinput, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
+
+        # log intra attention weights
+        if log_intra_attn and use_intra_attn and _batch_number % 3 == 0:
+            for i in range(len(user_list)):
+                if inter_session_seq_length[i] == 15 and sl[i] > 5:
+                    datahandler.log_attention_weights_intra(intra_attn_weights, RUN_NAME, sl, batch_predictions, user_list[i], i)
 
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
