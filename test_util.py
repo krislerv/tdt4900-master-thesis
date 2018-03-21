@@ -31,7 +31,7 @@ class Tester:
 
         raise Exception("could not find target in sequence")
 
-    def evaluate_sequence(self, predicted_sequence, target_sequence, seq_len, user_id, avg_delta_t, std_delta_t):
+    def evaluate_sequence(self, predicted_sequence, target_sequence, seq_len, user_id):
         for i in range(seq_len):
             target_item = target_sequence[i]
             k_predictions = predicted_sequence[i]
@@ -42,28 +42,16 @@ class Tester:
                     self.recall[i][j] += 1
                     inv_rank = 1.0/self.get_rank(target_item, k_predictions[:k].data)
                     self.mrr[i][j] += inv_rank
-                    """
-                    if k == 20:
-                        self.correct_predictions_per_user[user_id] += 1
-                        self.correct_predictions_per_session_length[seq_len] += 1
-                        self.avg_recall_bucket[avg_delta_t] += 1
-                        self.std_recall_bucket[std_delta_t] += 1
-                    """
-            self.avg_total_bucket[avg_delta_t] += 1
-            self.std_total_bucket[std_delta_t] += 1
-            #self.total_predictions_per_user[user_id] += 1
             self.i_count[i] += 1
         self.total_predictions_per_session_length[seq_len] += seq_len
 
 
-    def evaluate_batch(self, predictions, targets, sequence_lengths, user_list, avg_delta_t, std_delta_t):
+    def evaluate_batch(self, predictions, targets, sequence_lengths, user_list):
         for batch_index in range(len(predictions)):
             predicted_sequence = predictions[batch_index]
             target_sequence = targets[batch_index]
             user_id = user_list[batch_index]
-            sequence_avg_delta_t = avg_delta_t[batch_index].data[0]
-            sequence_std_delta_t = std_delta_t[batch_index].data[0]
-            self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index], user_id, sequence_avg_delta_t, sequence_std_delta_t)
+            self.evaluate_sequence(predicted_sequence, target_sequence, sequence_lengths[batch_index], user_id)
     
     def format_score_string(self, score_type, score):
         tabs = '\t'

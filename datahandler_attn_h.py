@@ -161,6 +161,7 @@ class IIRNNDataHandler:
 
         previous_session_batch = []
         previous_session_lengths = []
+        prevoius_session_counts = []
         
         # Decide which users to take sessions from. First count the number of remaining sessions
         remaining_sessions = [0]*len(self.users_with_remaining_sessions)
@@ -171,7 +172,7 @@ class IIRNNDataHandler:
         # index of users to get
         user_list = IIRNNDataHandler.get_N_highest_indexes(remaining_sessions, self.batch_size)
         if(len(user_list) == 0):
-            return [], [], [], [], [], [], [], [], [], [], [], []
+            return [], [], [], [], [], [], [], [], [], [], [], [], []
         for i in range(len(user_list)):
             user_list[i] = self.users_with_remaining_sessions[user_list[i]]
 
@@ -182,12 +183,48 @@ class IIRNNDataHandler:
             session_batch.append(dataset[user][session_index])
             session_lengths.append(dataset_session_lengths[user][session_index])
 
+
+            user_previous_sessions = []
+            user_previous_session_lengths = []
+            user_num_prev_sessions = 0
+
+            """
+            oldest_index = session_index - self.MAX_SESSION_REPRESENTATIONS
+            padding = 0
+
+            if oldest_index < 0:
+                padding = -1 * oldest_index
+                oldest_index = 0
+
+            for i in range(oldest_index, session_index):
+            """
+
+            for i in range(session_index - 1, session_index - 1 - self.MAX_SESSION_REPRESENTATIONS, -1):    # start at the previous session, loop backwards 15 times
+                if i < 0:
+                    break
+                user_previous_sessions.append(dataset[user][i])
+                user_previous_session_lengths.append(dataset_session_lengths[user][i])
+                user_num_prev_sessions += 1
+
+            user_previous_sessions = list(reversed(user_previous_sessions))
+            user_previous_session_lengths = list(reversed(user_previous_session_lengths))
+            
+            while (len(user_previous_sessions) < 15):
+                user_previous_sessions.append([[0, 0]] * 20)
+                user_previous_session_lengths.append(0)
+
+            previous_session_batch.append(user_previous_sessions)
+            previous_session_lengths.append(user_previous_session_lengths)
+            prevoius_session_counts.append(user_num_prev_sessions)
+
+            """
             if session_index == 0:
                 previous_session_batch.append([[0, 0]] * 20)
                 previous_session_lengths.append(0)
             else:
                 previous_session_batch.append(dataset[user][session_index - 1])
                 previous_session_lengths.append(dataset_session_lengths[user][session_index - 1])
+            """
 
             srl = max(self.num_user_session_representations[user],1)
             sess_rep_lengths.append(srl)
@@ -213,11 +250,11 @@ class IIRNNDataHandler:
 
         #sort batch based on seq rep len
         session_batch = [[event[1] for event in session] for session in session_batch]
-        previous_session_batch = [[event[1] for event in session] for session in previous_session_batch]
+        previous_session_batch = [[[event[1] for event in session] for session in user_sessions] for user_sessions in previous_session_batch]
         x = [session[:-1] for session in session_batch]
         y = [session[1:] for session in session_batch]
 
-        return x, y, session_lengths, input_timestamps, input_timestamp_bucket_ids, sess_rep_batch, sess_rep_lengths, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths
+        return x, y, session_lengths, input_timestamps, input_timestamp_bucket_ids, sess_rep_batch, sess_rep_lengths, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts
 
     def get_next_train_batch(self):
         return self.get_next_batch(self.trainset, self.train_session_lengths, self.train_timestamps, self.train_timestamp_bucket_ids)

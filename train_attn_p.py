@@ -20,7 +20,7 @@ import gc
 
 # datasets
 reddit = "reddit-2-month"
-lastfm = "lastfm-3-months"
+lastfm = "lastfm-low-low"
 dataset = lastfm
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
@@ -42,12 +42,12 @@ log_intra_attn = True
 
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = False
+resume_model = True
 resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-False-True"    # unused if resume_model is False
 
 # GPU settings
 use_cuda = True
-GPU_NO = 1
+GPU_NO = 0
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -84,7 +84,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 60
+BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data
@@ -364,8 +364,6 @@ while epoch <= MAX_EPOCHS:
     while len(xinput) > int(BATCH_SIZE / 2):
         _batch_number += 1
         batch_start_time = time.time()
-
-        print(datahandler.get_last_sessions_for_user(user_list[0]))
 
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
