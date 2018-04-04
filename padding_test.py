@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
 import random
 
@@ -39,48 +40,55 @@ class InterRNN(nn.Module):
 
 
     def forward(self, hidden, current_session_batch, current_session_lengths):
-        current_session_batch = self.dropout1(current_session_batch) ##### BUG? #### baseline currently has dropout on the data that is used to generate session representations, maybe not intended?
-        prevoius_session_length_is_zero = torch.lt(current_session_lengths, 1) # add one to session length if session count is zero
-        current_session_lengths = current_session_lengths + prevoius_session_length_is_zero.long()
-        sum_x = current_session_batch.sum(1)
-        mean_x = sum_x.div(current_session_lengths.unsqueeze(1).float())
-        return [], [], [], mean_x
-
-
-        """
         # gets the output of the last non-zero session representation
         current_session_batch = self.dropout1(current_session_batch)
-        output, hidden = self.gru(current_session_batch, hidden)
+        (sorted_lengths, sorted_idx) = torch.sort(current_session_lengths, descending=True)
+        sorted_data = current_session_batch[sorted_idx]
+        csb = pack_padded_sequence(sorted_data, list(sorted_lengths.data), batch_first=True)
+
+        unpacked_input, _ = pad_packed_sequence(csb, batch_first=True)
+
+        output, hidden = self.gru(csb, hidden)
+
+        unpacked_output, _ = pad_packed_sequence(output, batch_first=True)
+
+        #### UNSORT!!!
+        unsorted_unpacked_output = Variable(unpacked_output.data.new(*unpacked_output.size()))
+        unsorted_unpacked_output.scatter_(0, sorted_idx.view(-1,1,1).expand_as(unpacked_output), unpacked_output)
+
+
+        unsorted_unpacked_input = Variable(unpacked_input.data.new(*unpacked_input.size()))
+        unsorted_unpacked_input.scatter_(0, sorted_idx.view(-1,1,1).expand_as(unpacked_input), unpacked_input)
+
+
         # create a mask so that attention weights for "empty" outputs are zero
-        current_session_lengths_expanded = current_session_lengths.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SEQ_LEN]
-        indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SEQ_LEN]
-        mask = torch.lt(indexes, current_session_lengths_expanded) # [BATCH_SIZE, MAX_SEQ_LEN]  i-th element in each batch is 1 if it is a real item, 0 otherwise
-        mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float() * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [BATCH_SIZE, MAX_SEQ_LEN, HIDDEN_SIZE]
+        #current_session_lengths_expanded = current_session_lengths.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SEQ_LEN]
+        #indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SEQ_LEN]
+        #mask = torch.lt(indexes, current_session_lengths_expanded) # [BATCH_SIZE, MAX_SEQ_LEN]  i-th element in each batch is 1 if it is a real item, 0 otherwise
+        #mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float() * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [BATCH_SIZE, MAX_SEQ_LEN, HIDDEN_SIZE]
 
-        output = output + mask  # apply mask
+        #output = output + mask  # apply mask
 
-        attn_energies = torch.tanh(self.attention(output))
+        attn_energies = torch.tanh(self.attention(unsorted_unpacked_output))
         attn_energies = self.scale(attn_energies)
 
-        attn_weights = F.softmax(attn_energies.squeeze())
+        attn_weights = F.softmax(attn_energies.squeeze(2))
 
-        session_representations = torch.bmm(attn_weights.unsqueeze(1), current_session_batch)   # session representations are a weigted sum of each item embedding of the session, weights determined by attention mechanism
+        session_representations = torch.bmm(attn_weights.unsqueeze(1), unsorted_unpacked_input)   # session representations are a weigted sum of each item embedding of the session, weights determined by attention mechanism
 
         # gets the last actual hidden state (generated from a non-zero input)
-        zeros = Variable(torch.zeros(current_session_lengths.size(0)).long()).cuda(self.gpu_no)
-        last_index_of_sessions = current_session_lengths - 1
-        last_index_of_sessions = torch.max(zeros, last_index_of_sessions) # if last index is < 0, set it to 0
-        hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(output.size(0), 1, output.size(2))
-        hidden = torch.gather(output, 1, hidden_indices)
-        hidden = hidden.squeeze()
-        hidden = hidden.unsqueeze(0)
+        #zeros = Variable(torch.zeros(current_session_lengths.size(0)).long()).cuda()
+        #last_index_of_sessions = current_session_lengths - 1
+        #last_index_of_sessions = torch.max(zeros, last_index_of_sessions) # if last index is < 0, set it to 0
+        #hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(output.size(0), 1, output.size(2))
+        #hidden = torch.gather(output, 1, hidden_indices)
+        #hidden = hidden.squeeze()
+        #hidden = hidden.unsqueeze(0)
         #hidden = self.dropout2(hidden)
 
         session_representations = self.dropout2(session_representations)
 
         return output, hidden, attn_weights, session_representations
-        """
-        
 
     # initialize hidden with variable batch size
     def init_hidden(self, batch_size, use_cuda):
@@ -117,19 +125,6 @@ class InterRNN2(nn.Module):
         all_session_representations = self.dropout1(all_session_representations)
         output, hidden = self.gru(all_session_representations, hidden)
 
-        prevoius_session_counts_is_zero = torch.lt(prevoius_session_counts, 1) # add one to session count if session count is zero
-
-        last_index_of_session_reps = prevoius_session_counts - 1 + prevoius_session_counts_is_zero.long()
-        hidden_indices = last_index_of_session_reps.view(-1, 1, 1).expand(output.size(0), 1, output.size(2))
-        hidden_out = torch.gather(output, 1, hidden_indices)
-        hidden_out = hidden_out.squeeze()
-        hidden_out = hidden_out.unsqueeze(0)
-        hidden_out = self.dropout2(hidden_out)
-        return output, hidden_out, [], []
-
-        """
-        all_session_representations = self.dropout1(all_session_representations)
-        output, hidden = self.gru(all_session_representations, hidden)
         # create a mask so that attention weights for "empty" outputs are zero
         prevoius_session_counts_expanded = prevoius_session_counts.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SESS_REP]
         indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SESS_REP]
@@ -143,10 +138,10 @@ class InterRNN2(nn.Module):
 
         attn_weights = F.softmax(attn_energies.squeeze())
 
-        user_representations = torch.bmm(attn_weights.unsqueeze(1), all_session_representations)
+        user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
 
         # gets the last actual hidden state (generated from a non-zero input)
-        zeros = Variable(torch.zeros(prevoius_session_counts.size(0)).long()).cuda(self.gpu_no)
+        zeros = Variable(torch.zeros(prevoius_session_counts.size(0)).long()).cuda()
         last_index_of_sessions = prevoius_session_counts - 1
         last_index_of_sessions = torch.max(zeros, last_index_of_sessions) # if last index is < 0, set it to 0
         hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(output.size(0), 1, output.size(2))
@@ -156,7 +151,6 @@ class InterRNN2(nn.Module):
         hidden = self.dropout2(hidden)
 
         return output, hidden, attn_weights, user_representations
-        """
 
     # initialize hidden with variable batch size
     def init_hidden(self, batch_size, use_cuda):

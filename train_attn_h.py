@@ -3,6 +3,7 @@ import os
 import time
 import numpy as np
 from models_attn_h import InterRNN, InterRNN2, IntraRNN, Embed
+#from padding_test import InterRNN, InterRNN2, IntraRNN, Embed
 from datahandler_attn_h import IIRNNDataHandler
 from test_util import Tester
 
@@ -132,7 +133,6 @@ inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
 if resume_model:
     inter_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter_optimizer.pth"))
 
-
 # initialize inter RNN 2
 inter_rnn2 = InterRNN2(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, use_hidden_state_attn=use_hidden_state_attn, use_delta_t_attn=use_delta_t_attn, use_week_time_attn=use_week_time_attn, gpu_no=GPU_NO)
 if use_cuda:
@@ -190,6 +190,8 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     previous_session_batch = previous_session_batch.transpose(0, 1)     # max_sess_rep x batch_size x max_sess_length
     previous_session_lengths = previous_session_lengths.transpose(0, 1) # max_sess_rep x batch_size
 
+    previous_session_lengths += 1
+
     inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
 
     all_session_representations = Variable(torch.zeros(MAX_SESSION_REPRESENTATIONS, previous_session_batch.size(1), INTER_INTERNAL_SIZE)).cuda(GPU_NO)
@@ -198,6 +200,7 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
         current_session_batch = previous_session_batch[i]   # batch_size x max_sess_length
         current_session_lengths = previous_session_lengths[i]
         current_session_batch = embed(current_session_batch)
+        inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
         inter_output, inter_hidden, inter_attn_weights, session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
         all_session_representations[i] = session_representations
 
@@ -208,7 +211,8 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     loss = 0
 
     # call forward on intra gru layer with hidden state from inter
-    intra_hidden = user_representations.transpose(0, 1)
+    #intra_hidden = user_representations.transpose(0, 1)
+    intra_hidden = inter2_hidden
     for i in range(input.size(1)):
         b = Variable(torch.LongTensor([i]).expand(input.size(0), 1))
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, EMBEDDING_SIZE))
@@ -296,6 +300,8 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
     previous_session_batch = previous_session_batch.transpose(0, 1)     # max_sess_rep x batch_size x max_sess_length
     previous_session_lengths = previous_session_lengths.transpose(0, 1) # max_sess_rep x batch_size
 
+    previous_session_lengths += 1
+
     inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
 
     all_session_representations = Variable(torch.zeros(MAX_SESSION_REPRESENTATIONS, previous_session_batch.size(1), INTER_INTERNAL_SIZE)).cuda(GPU_NO)
@@ -304,6 +310,7 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
         current_session_batch = previous_session_batch[i]   # batch_size x max_sess_length
         current_session_lengths = previous_session_lengths[i]
         current_session_batch = embed(current_session_batch)
+        inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
         inter_output, inter_hidden, inter_attn_weights, session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
         all_session_representations[i] = session_representations
 
@@ -311,7 +318,8 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
     inter2_hidden = inter_rnn2.init_hidden(previous_session_batch.size(1), use_cuda)
     inter2_output, inter2_hidden, inter2_attn_weights, user_representations = inter_rnn2(inter2_hidden, all_session_representations, prevoius_session_counts)
 
-    intra_hidden = user_representations.transpose(0, 1)
+    #intra_hidden = user_representations.transpose(0, 1)
+    intra_hidden = inter2_hidden
     for i in range(input.size(1)):
         b = Variable(torch.LongTensor([i]).expand(input.size(0), 1))
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, EMBEDDING_SIZE))
@@ -391,9 +399,7 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
         batch_start_time = time.time()
 
-
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts)
-
 
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:

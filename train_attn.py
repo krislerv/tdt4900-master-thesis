@@ -219,7 +219,6 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     if not use_intra_attn:
         intra_attn_weights = []
     
-
     # get last hidden states for session representations
     last_index_of_sessions = session_lengths - 1
     hidden_indices = last_index_of_sessions.view(-1, 1, 1).expand(gru_output.size(0), 1, gru_output.size(2))
@@ -364,9 +363,6 @@ while epoch <= MAX_EPOCHS:
     while len(xinput) > int(BATCH_SIZE / 2):
         _batch_number += 1
         batch_start_time = time.time()
-
-        print(datahandler.get_last_sessions_for_user(user_list[0]))
-
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
 
