@@ -42,6 +42,14 @@ class InterRNN(nn.Module):
         current_session_batch = self.dropout1(current_session_batch) ##### BUG? #### baseline currently has dropout on the data that is used to generate session representations, maybe not intended?
         prevoius_session_length_is_zero = torch.lt(current_session_lengths, 1) # add one to session length if session count is zero
         current_session_lengths = current_session_lengths + prevoius_session_length_is_zero.long()
+
+        indexes = self.index_list.unsqueeze(0).expand(current_session_batch.size(0), current_session_batch.size(1))
+        current_session_lengths_expanded = current_session_lengths.unsqueeze(1).expand(current_session_batch.size(0), current_session_batch.size(1))
+        mask = torch.lt(indexes, current_session_lengths_expanded)
+        mask = mask.unsqueeze(2).expand(current_session_batch.size(0), current_session_batch.size(1), current_session_batch.size(2)).float()
+
+        current_session_batch = current_session_batch * mask
+
         sum_x = current_session_batch.sum(1)
         mean_x = sum_x.div(current_session_lengths.unsqueeze(1).float())
         return [], [], [], mean_x

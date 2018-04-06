@@ -171,7 +171,6 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
 
     input_embedding = embed(input)
 
-
     input_timestamps = input_timestamps.unsqueeze(1).expand(input.size(0), MAX_SESSION_REPRESENTATIONS)
     delta_t = input_timestamps - sess_rep_timestamps_batch
     delta_t_hours = delta_t.div(3600)

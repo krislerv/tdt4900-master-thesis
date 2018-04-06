@@ -42,7 +42,7 @@ log_inter_attn = False
 log_intra_attn = True
 
 # saving/loading of model parameters
-save_model_parameters = True
+save_model_parameters = False
 resume_model = False
 resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-False-True"    # unused if resume_model is False
 
@@ -309,7 +309,7 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
     for i in range(previous_session_batch.size(0)):
         current_session_batch = previous_session_batch[i]   # batch_size x max_sess_length
         current_session_lengths = previous_session_lengths[i]
-        current_session_batch = embed(current_session_batch)
+        current_session_batch = embed(current_session_batch) # batch_size x max_sess_length x embedding_size
         inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
         inter_output, inter_hidden, inter_attn_weights, session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
         all_session_representations[i] = session_representations
