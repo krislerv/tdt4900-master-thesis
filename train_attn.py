@@ -21,7 +21,7 @@ import gc
 # datasets
 reddit = "reddit-2-month"
 lastfm = "lastfm-3-months"
-dataset = lastfm
+dataset = reddit
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
 use_last_hidden_state = False
@@ -32,16 +32,16 @@ use_delta_t_attn = False
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
-use_intra_attn = True
+use_intra_attn = False
 user_intra_delta_t_attn = False # not used if use_intra_attn is False
-use_per_user_intra_attn = True # not used if use_intra_attn is False
+use_per_user_intra_attn = False # not used if use_intra_attn is False
 
 # logging of attention weights
 log_inter_attn = False
-log_intra_attn = True
+log_intra_attn = False
 
 # saving/loading of model parameters
-save_model_parameters = True
+save_model_parameters = False
 resume_model = False
 resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-False-True"    # unused if resume_model is False
 
@@ -64,7 +64,7 @@ LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 0
+seed = 1
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -365,7 +365,6 @@ while epoch <= MAX_EPOCHS:
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
 
-
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
             datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps, dataset)
@@ -417,7 +416,7 @@ while epoch <= MAX_EPOCHS:
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
         # Evaluate predictions
-        tester.evaluate_batch(batch_predictions, targetvalues, sl, user_list, avg_delta_t, std_delta_t.long())
+        tester.evaluate_batch(batch_predictions, targetvalues, sl, user_list)
 
         # Print some stats during testing
         if _batch_number % 100 == 0:

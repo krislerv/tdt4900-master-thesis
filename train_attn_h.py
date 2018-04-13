@@ -39,7 +39,7 @@ use_per_user_intra_attn = False # not used if use_intra_attn is False
 
 # logging of attention weights
 log_inter_attn = False
-log_intra_attn = True
+log_intra_attn = False
 
 # saving/loading of model parameters
 save_model_parameters = False
@@ -48,7 +48,7 @@ resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-Fa
 
 # GPU settings
 use_cuda = True
-GPU_NO = 0
+GPU_NO = 1
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -135,9 +135,13 @@ if resume_model:
 
 # initialize inter RNN 2
 inter_rnn2 = InterRNN2(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, use_hidden_state_attn=use_hidden_state_attn, use_delta_t_attn=use_delta_t_attn, use_week_time_attn=use_week_time_attn, gpu_no=GPU_NO)
+if resume_model:
+    inter_rnn2.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter2_model.pth"))
 if use_cuda:
     inter_rnn2 = inter_rnn2.cuda(GPU_NO)
 inter_optimizer2 = optim.Adam(inter_rnn2.parameters(), lr=LEARNING_RATE)
+if resume_model:
+    inter_optimizer2.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter2_optimizer.pth"))
 
 # initialize intra RNN
 intra_rnn = IntraRNN(N_ITEMS, INTRA_INTERNAL_SIZE, EMBEDDING_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, use_attn=use_intra_attn, use_delta_t_attn=user_intra_delta_t_attn, use_per_user_intra_attn=use_per_user_intra_attn, gpu_no=GPU_NO)
@@ -190,6 +194,7 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     previous_session_batch = previous_session_batch.transpose(0, 1)     # max_sess_rep x batch_size x max_sess_length
     previous_session_lengths = previous_session_lengths.transpose(0, 1) # max_sess_rep x batch_size
 
+
     previous_session_lengths += 1
 
     inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
@@ -202,7 +207,8 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
         current_session_batch = embed(current_session_batch)
         inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
         inter_output, inter_hidden, inter_attn_weights, session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
-        all_session_representations[i] = session_representations
+        #all_session_representations[i] = session_representations
+        all_session_representations[i] = inter_hidden.transpose(0, 1)
 
     all_session_representations = all_session_representations.transpose(0, 1)
     inter2_hidden = inter_rnn2.init_hidden(previous_session_batch.size(1), use_cuda)
@@ -213,6 +219,8 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
     # call forward on intra gru layer with hidden state from inter
     #intra_hidden = user_representations.transpose(0, 1)
     intra_hidden = inter2_hidden
+
+    """
     for i in range(input.size(1)):
         b = Variable(torch.LongTensor([i]).expand(input.size(0), 1))
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, EMBEDDING_SIZE))
@@ -236,6 +244,9 @@ def train(input, target, session_lengths, session_reps, inter_session_seq_length
             cat_embedded_input = torch.cat((cat_embedded_input, embedded_input), 1)
             if use_intra_attn:
                 intra_attn_weights = torch.cat((intra_attn_weights, attn_weights.unsqueeze(1)), 1)
+    """
+    output, intra_hidden, cat_embedded_input, gru_output, attn_weights = intra_rnn(input, input_embedding, intra_hidden, inter2_output, user_list)
+    loss += masked_cross_entropy_loss(output.view(-1, N_ITEMS), target.view(-1)).mean(0)
 
     if not use_intra_attn:
         intra_attn_weights = []
@@ -312,7 +323,8 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
         current_session_batch = embed(current_session_batch) # batch_size x max_sess_length x embedding_size
         inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
         inter_output, inter_hidden, inter_attn_weights, session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
-        all_session_representations[i] = session_representations
+        #all_session_representations[i] = session_representations
+        all_session_representations[i] = inter_hidden.transpose(0, 1)
 
     all_session_representations = all_session_representations.transpose(0, 1)
     inter2_hidden = inter_rnn2.init_hidden(previous_session_batch.size(1), use_cuda)
@@ -320,6 +332,7 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
 
     #intra_hidden = user_representations.transpose(0, 1)
     intra_hidden = inter2_hidden
+    """
     for i in range(input.size(1)):
         b = Variable(torch.LongTensor([i]).expand(input.size(0), 1))
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, EMBEDDING_SIZE))
@@ -328,7 +341,7 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
             ee = ee.cuda(GPU_NO)
         c = torch.gather(input, 1, b)
         e = torch.gather(input_embedding, 1, ee)
-        out, intra_hidden, embedded_input, gru, attn_weights = intra_rnn(c, e, intra_hidden, inter_output, user_list)
+        out, intra_hidden, embedded_input, gru, attn_weights = intra_rnn(c, e, intra_hidden, inter2_output, user_list)
         if i == 0:
             output = out
             gru_output = gru
@@ -341,8 +354,13 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
             cat_embedded_input = torch.cat((cat_embedded_input, embedded_input), 1)
             if use_intra_attn:
                 intra_attn_weights = torch.cat((intra_attn_weights, attn_weights.unsqueeze(1)), 1)
+    """
     if not use_intra_attn:
         intra_attn_weights = []
+
+    output, intra_hidden, cat_embedded_input, gru_output, attn_weights = intra_rnn(input, input_embedding, intra_hidden, inter2_output, user_list)
+    #loss += masked_cross_entropy_loss(output.view(-1, N_ITEMS), target.view(-1)).mean(0)
+
 
     # get last hidden states for session representations
     last_index_of_sessions = session_lengths - 1
@@ -401,6 +419,11 @@ while epoch <= MAX_EPOCHS:
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts)
 
+        #print(embed.embedding_table.weight.grad)
+        #print(inter_rnn.gru.weight_ih_l0.grad)
+        #print(intra_rnn.gru.weight_ih_l0.grad)
+        #print(torch.abs(intra_rnn.gru.weight_ih_l0.grad) / torch.abs(inter_rnn.gru.weight_ih_l0.grad))
+
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
             datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps, dataset)
@@ -418,9 +441,9 @@ while epoch <= MAX_EPOCHS:
             print("\t ETA:", eta, "minutes.")
 
 
-            #============ TensorBoard logging ============#
-            tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
-            log_count += 1
+        #============ TensorBoard logging ============#
+        tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
+        log_count += 1
         
         xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts = datahandler.get_next_train_batch()
 
@@ -481,7 +504,9 @@ while epoch <= MAX_EPOCHS:
     if save_model_parameters:
         torch.save(embed.state_dict(), HOME + "/savestates/" + RUN_NAME + "-embed_model.pth")
         torch.save(inter_rnn.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter_model.pth")
+        torch.save(inter_rnn2.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter2_model.pth")
         torch.save(intra_rnn.state_dict(), HOME + "/savestates/" + RUN_NAME + "-intra_model.pth")
         torch.save(embed_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-embed_optimizer.pth")
         torch.save(inter_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter_optimizer.pth")
+        torch.save(inter_optimizer2.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter2_optimizer.pth")
         torch.save(intra_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-intra_optimizer.pth")

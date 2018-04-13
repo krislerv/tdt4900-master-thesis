@@ -105,6 +105,7 @@ venv.bak/
 
 # tensorboard log files
 logs/
+*tfevents*
 
 # more log files
 testlog/

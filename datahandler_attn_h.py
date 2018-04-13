@@ -254,6 +254,8 @@ class IIRNNDataHandler:
         x = [session[:-1] for session in session_batch]
         y = [session[1:] for session in session_batch]
 
+        #previous_session_batch = [[session[:-1] for session in user_sessions] for user_sessions in previous_session_batch]
+
         return x, y, session_lengths, input_timestamps, input_timestamp_bucket_ids, sess_rep_batch, sess_rep_lengths, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts
 
     def get_next_train_batch(self):

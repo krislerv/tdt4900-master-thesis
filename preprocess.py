@@ -9,7 +9,7 @@ lastfm = "lastfm-high-high-2"
 
 create_lastfm_cet = False
 
-dataset = lastfm
+dataset = reddit
 
 home = os.path.expanduser('~')
 
@@ -133,7 +133,7 @@ def filter_timestamps():
     ##########################
     # filter out events to only include those in a given interval
     ##########################
-    """
+    
     new_dataset_list = []
     last_user_id = ""
     first_user_timestamp = ""
@@ -159,7 +159,7 @@ def filter_timestamps():
     print("t_skip", t_skip, t_non_skip)
 
     save_pickle(new_dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
-    """
+    
     dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
     save_pickle(dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
 
@@ -295,6 +295,7 @@ def sort_and_split_usersessions():
     for user in to_be_removed:
         new_user_sessions.pop(user)
 
+    """
     to_be_removed =  user_avg_session_length_filter(new_user_sessions, False)
     for user in to_be_removed:
         new_user_sessions.pop(user)
@@ -302,7 +303,7 @@ def sort_and_split_usersessions():
     to_be_removed =  user_avg_session_count_filter(new_user_sessions, False)
     for user in to_be_removed:
         new_user_sessions.pop(user)
-
+    """
 
     # Do a remapping to account for removed data
     print("remapping to account for removed data...")
@@ -475,9 +476,9 @@ if not file_exists(DATASET_W_CONVERTED_TIMESTAMPS):
     elif dataset == lastfm:
         convert_timestamps_lastfm()
 
-#if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
-#    print("Filtering timestamps")
-#    filter_timestamps()
+if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
+    print("Filtering timestamps")
+    filter_timestamps()
 
 if not file_exists(DATASET_USER_ARTIST_MAPPED):
     print("Mapping user and artist IDs to labels.")

@@ -39,6 +39,7 @@ class InterRNN(nn.Module):
 
 
     def forward(self, hidden, current_session_batch, current_session_lengths):
+        """
         current_session_batch = self.dropout1(current_session_batch) ##### BUG? #### baseline currently has dropout on the data that is used to generate session representations, maybe not intended?
         prevoius_session_length_is_zero = torch.lt(current_session_lengths, 1) # add one to session length if session count is zero
         current_session_lengths = current_session_lengths + prevoius_session_length_is_zero.long()
@@ -82,12 +83,12 @@ class InterRNN(nn.Module):
         hidden = torch.gather(output, 1, hidden_indices)
         hidden = hidden.squeeze()
         hidden = hidden.unsqueeze(0)
-        #hidden = self.dropout2(hidden)
+        hidden = self.dropout2(hidden)
 
         session_representations = self.dropout2(session_representations)
 
         return output, hidden, attn_weights, session_representations
-        """
+        
         
 
     # initialize hidden with variable batch size
@@ -122,6 +123,7 @@ class InterRNN2(nn.Module):
 
 
     def forward(self, hidden, all_session_representations, prevoius_session_counts):
+        """
         all_session_representations = self.dropout1(all_session_representations)
         output, hidden = self.gru(all_session_representations, hidden)
 
@@ -164,7 +166,8 @@ class InterRNN2(nn.Module):
         hidden = self.dropout2(hidden)
 
         return output, hidden, attn_weights, user_representations
-        """
+        
+        
 
     # initialize hidden with variable batch size
     def init_hidden(self, batch_size, use_cuda):
