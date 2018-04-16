@@ -4,7 +4,7 @@ import time
 import numpy as np
 from models_attn import InterRNN, IntraRNN, Embed
 from datahandler_attn import IIRNNDataHandler
-from test_util import Tester
+from test_util_h import Tester
 
 import torch
 import torch.nn as nn
@@ -21,7 +21,7 @@ import gc
 # datasets
 reddit = "reddit-2-month"
 lastfm = "lastfm-3-months"
-dataset = reddit
+dataset = lastfm
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
 use_last_hidden_state = False
@@ -47,7 +47,7 @@ resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-Fa
 
 # GPU settings
 use_cuda = True
-GPU_NO = 1
+GPU_NO = 0
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -64,7 +64,7 @@ LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 1
+seed = 0
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -78,7 +78,7 @@ elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
-    DROPOUT_RATE = 0.2
+    DROPOUT_RATE = 0
     MAX_EPOCHS = 50
 N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
@@ -365,6 +365,8 @@ while epoch <= MAX_EPOCHS:
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
 
+        print(sess_rep)
+
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
             datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps, dataset)
@@ -382,9 +384,9 @@ while epoch <= MAX_EPOCHS:
             print("\t ETA:", eta, "minutes.")
 
 
-            #============ TensorBoard logging ============#
-            tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
-            log_count += 1
+        #============ TensorBoard logging ============#
+        tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
+        log_count += 1
         
         xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths = datahandler.get_next_train_batch()
 
@@ -395,7 +397,7 @@ while epoch <= MAX_EPOCHS:
     ##  TESTING
     ##
     print("Starting testing")
-    tester = Tester(1000)
+    tester = Tester()
     datahandler.reset_user_batch_data()
     _batch_number = 0
     xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths = datahandler.get_next_test_batch()
@@ -416,7 +418,7 @@ while epoch <= MAX_EPOCHS:
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
         # Evaluate predictions
-        tester.evaluate_batch(batch_predictions, targetvalues, sl, user_list)
+        tester.evaluate_batch(batch_predictions, targetvalues, sl)
 
         # Print some stats during testing
         if _batch_number % 100 == 0:
@@ -429,15 +431,19 @@ while epoch <= MAX_EPOCHS:
         xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths = datahandler.get_next_test_batch()
 
     # Print final test stats for epoch
-    test_stats, current_recall5, current_recall20 = tester.get_stats_and_reset()
+    test_stats, current_recall5, current_recall10, current_recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()
     print("Recall@5 = " + str(current_recall5))
     print("Recall@20 = " + str(current_recall20))
     print(test_stats)
     if epoch == 1:
         datahandler.log_config(message)
     datahandler.log_test_stats(epoch, epoch_loss, test_stats)
-    tensorboard.scalar_summary('recall@5', current_recall5, epoch)
-    tensorboard.scalar_summary('recall@20', current_recall20, epoch)
+    tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
+    tensorboard.scalar_summary('Recall@10', current_recall5, epoch)
+    tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
+    tensorboard.scalar_summary('MRR@5', mrr5, epoch)
+    tensorboard.scalar_summary('MRR@10', mrr10, epoch)
+    tensorboard.scalar_summary('MRR@20', mrr20, epoch)
     tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
 
     epoch += 1

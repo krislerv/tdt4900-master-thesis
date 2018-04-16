@@ -51,6 +51,15 @@ class IIRNNDataHandler:
             # everyone has at least one session
             self.users_with_remaining_sessions.append(k)
 
+    def reset_user_session_representations(self):
+        # session representations for each user is stored here
+        self.user_session_representations = [None]*self.num_users
+        # the number of (real) session representations a user has
+        self.num_user_session_representations = [0]*self.num_users
+        for k, v in self.trainset.items():
+            self.user_session_representations[k] = collections.deque(maxlen=self.MAX_SESSION_REPRESENTATIONS)
+            self.user_session_representations[k].append([0]*self.LT_INTERNALSIZE)
+
     def get_N_highest_indexes(a,N):
         return np.argsort(a)[::-1][:N]
 
@@ -96,6 +105,9 @@ class IIRNNDataHandler:
         previous_session_batch = []
         previous_session_lengths = []
         prevoius_session_counts = []
+
+        sess_rep_batch = []
+        sess_rep_lengths = []
         
         # Decide which users to take sessions from. First count the number of remaining sessions
         remaining_sessions = [0]*len(self.users_with_remaining_sessions)
@@ -106,7 +118,7 @@ class IIRNNDataHandler:
         # index of users to get
         user_list = IIRNNDataHandler.get_N_highest_indexes(remaining_sessions, self.batch_size)
         if(len(user_list) == 0):
-            return [], [], [], [], [], []
+            return [], [], [], [], [], [], [], [], []
         for i in range(len(user_list)):
             user_list[i] = self.users_with_remaining_sessions[user_list[i]]
 
@@ -116,7 +128,6 @@ class IIRNNDataHandler:
             session_index = self.user_next_session_to_retrieve[user]
             session_batch.append(dataset[user][session_index])
             session_lengths.append(dataset_session_lengths[user][session_index])
-
 
             user_previous_sessions = []
             user_previous_session_lengths = []
@@ -140,6 +151,14 @@ class IIRNNDataHandler:
             previous_session_lengths.append(user_previous_session_lengths)
             prevoius_session_counts.append(user_num_prev_sessions)
 
+            srl = max(self.num_user_session_representations[user],1)
+            sess_rep_lengths.append(srl)
+            sess_rep = list(self.user_session_representations[user]) #copy
+            if(srl < self.MAX_SESSION_REPRESENTATIONS):
+                for i in range(self.MAX_SESSION_REPRESENTATIONS-srl):
+                    sess_rep.append([0]*self.LT_INTERNALSIZE) #pad with zeroes after valid reps
+            sess_rep_batch.append(sess_rep)
+
             self.user_next_session_to_retrieve[user] += 1
             if self.user_next_session_to_retrieve[user] >= len(dataset[user]):
                 # User have no more session, remove him from users_with_remaining_sessions
@@ -153,7 +172,7 @@ class IIRNNDataHandler:
 
         #previous_session_batch = [[session[:-1] for session in user_sessions] for user_sessions in previous_session_batch]
 
-        return x, y, session_lengths, previous_session_batch, previous_session_lengths, prevoius_session_counts
+        return x, y, session_lengths, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths
 
     def get_next_train_batch(self):
         return self.get_next_batch(self.trainset, self.train_session_lengths)
@@ -181,5 +200,19 @@ class IIRNNDataHandler:
     def log_config(self, config):
         config = self.add_timestamp_to_message(config)
         logging.info(config)
+
+    def store_user_session_representations(self, sessions_representations, user_list):
+        for i in range(len(user_list)):
+            user = user_list[i]
+            if(user != -1):
+                session_representation = list(sessions_representations[i])
+
+                num_reps = self.num_user_session_representations[user]
+                
+                if(num_reps == 0):
+                    self.user_session_representations[user].pop() #pop the sucker
+                self.user_session_representations[user].append(session_representation)
+                self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
+
 
     

@@ -21,7 +21,7 @@ dataset = lastfm
 
 # GPU settings
 use_cuda = True
-GPU_NO = 1
+GPU_NO = 0
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -49,7 +49,7 @@ elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
-    DROPOUT_RATE = 0.2
+    DROPOUT_RATE = 0
     MAX_EPOCHS = 200
 N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
@@ -72,6 +72,7 @@ message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
 print(message)
+print("SWITCHED")
 
 
 # initialize embedding table
@@ -97,7 +98,7 @@ if use_cuda:
     intra_rnn = intra_rnn.cuda(GPU_NO)
 intra_optimizer = optim.Adam(intra_rnn.parameters(), lr=LEARNING_RATE)
 
-def run(input, target, session_lengths, previous_session_batch, previous_session_lengths, prevoius_session_counts):
+def run(input, target, session_lengths, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths):
     if intra_rnn.training:
         inter_optimizer2.zero_grad()
         intra_optimizer.zero_grad()
@@ -109,6 +110,9 @@ def run(input, target, session_lengths, previous_session_batch, previous_session
     previous_session_batch = Variable(torch.LongTensor(previous_session_batch))
     previous_session_lengths = Variable(torch.LongTensor(previous_session_lengths))
     prevoius_session_counts = Variable(torch.LongTensor(prevoius_session_counts))
+    sess_rep_batch = Variable(torch.FloatTensor(sess_rep_batch))
+    sess_rep_lengths = Variable(torch.LongTensor(sess_rep_lengths))
+
 
     if use_cuda:
         input = input.cuda(GPU_NO)
@@ -117,6 +121,8 @@ def run(input, target, session_lengths, previous_session_batch, previous_session
         previous_session_batch = previous_session_batch.cuda(GPU_NO)
         previous_session_lengths = previous_session_lengths.cuda(GPU_NO)
         prevoius_session_counts = prevoius_session_counts.cuda(GPU_NO)
+        sess_rep_batch = sess_rep_batch.cuda(GPU_NO)
+        sess_rep_lengths = sess_rep_lengths.cuda(GPU_NO)
 
     input_embedding = embed(input)
 
@@ -127,25 +133,32 @@ def run(input, target, session_lengths, previous_session_batch, previous_session
     inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
     all_session_representations = Variable(torch.zeros(MAX_SESSION_REPRESENTATIONS, previous_session_batch.size(1), INTER_INTERNAL_SIZE)).cuda(GPU_NO)
 
+    """
     for i in range(previous_session_batch.size(0)):
         current_session_batch = previous_session_batch[i]   # batch_size x max_sess_length
         current_session_lengths = previous_session_lengths[i]
         current_session_batch = embed(current_session_batch)
         inter_hidden = inter_rnn.init_hidden(previous_session_batch.size(1), use_cuda)
-        session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths)
+        session_representations = inter_rnn(inter_hidden, current_session_batch, current_session_lengths, user_list, i, input_embedding, session_lengths)
         all_session_representations[i] = session_representations
+    """
 
-    all_session_representations = all_session_representations.transpose(0, 1)
+    all_session_representations, mean_x = inter_rnn(user_list, input_embedding, session_lengths)
+
+    #print("START")
+    #print(all_session_representations[0])
+    #print(sess_rep_batch[0])
+
+    #all_session_representations = all_session_representations.transpose(0, 1)
     inter2_hidden = inter_rnn2.init_hidden(previous_session_batch.size(1), use_cuda)
     inter2_output, inter2_hidden = inter_rnn2(inter2_hidden, all_session_representations, prevoius_session_counts)
 
     # call forward on intra gru layer with hidden state from inter
     intra_hidden = inter2_hidden
 
-
-
-    loss = 0
+    #loss = 0
     
+    """
     for i in range(input.size(1)):
         # get input for this time-step
         ee = Variable(torch.LongTensor([i]).expand(input.size(0), 1, EMBEDDING_SIZE))
@@ -169,24 +182,25 @@ def run(input, target, session_lengths, previous_session_batch, previous_session
             output = out
         else:
             output = torch.cat((output, out), 1)
+    """
     
 
-    #output, intra_hidden = intra_rnn(input_embedding, intra_hidden)
+    output, intra_hidden = intra_rnn(input_embedding, intra_hidden)
 
     top_k_values, top_k_predictions = torch.topk(output, TOP_K)
 
     if intra_rnn.training:
-        #loss = 0
-        #loss += masked_cross_entropy_loss(output.view(-1, N_ITEMS), target.view(-1)).mean(0)    
+        loss = 0
+        loss += masked_cross_entropy_loss(output.view(-1, N_ITEMS), target.view(-1)).mean(0)    
         loss.backward()
 
         embed_optimizer.step()
         inter_optimizer2.step()
         intra_optimizer.step()
 
-        return loss.data[0], top_k_predictions
+        return loss.data[0], top_k_predictions, mean_x.data
 
-    return top_k_predictions
+    return top_k_predictions, mean_x.data
 
 #CUSTOM CROSS ENTROPY LOSS(Replace as soon as pytorch has implemented an option for non-summed losses)
 #https://github.com/pytorch/pytorch/issues/264
@@ -196,9 +210,6 @@ def masked_cross_entropy_loss(y_hat, y):
     mask = Variable(y.data.float().sign().view(-1, 1))
     logpy = logpy * mask
     return logpy.view(-1)
-
-def to_np(x):
-    return x.data.cpu().numpy()
 
 ##
 ##  TRAINING
@@ -217,8 +228,9 @@ while epoch <= MAX_EPOCHS:
     epoch_loss = 0
 
     datahandler.reset_user_batch_data()
+    datahandler.reset_user_session_representations()
     _batch_number = 0
-    xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts = datahandler.get_next_train_batch()
+    xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths = datahandler.get_next_train_batch()
     embed.train()
     inter_rnn.train()
     inter_rnn2.train()
@@ -227,7 +239,11 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
         batch_start_time = time.time()
 
-        batch_loss, top_k_predictions = run(xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts)
+        batch_loss, top_k_predictions, session_representations = run(xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths)
+
+        print(session_representations)
+
+        datahandler.store_user_session_representations(session_representations, user_list)
 
         epoch_loss += batch_loss
         if _batch_number % 100 == 0:
@@ -242,7 +258,7 @@ while epoch <= MAX_EPOCHS:
         tensorboard.scalar_summary('batch_loss', batch_loss, log_count)
         log_count += 1
         
-        xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts = datahandler.get_next_train_batch()
+        xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths = datahandler.get_next_train_batch()
 
     print("Epoch", epoch, "finished")
     print("|- Epoch loss:", epoch_loss)
@@ -254,7 +270,7 @@ while epoch <= MAX_EPOCHS:
     tester = Tester()
     datahandler.reset_user_batch_data()
     _batch_number = 0
-    xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts = datahandler.get_next_test_batch()
+    xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths = datahandler.get_next_test_batch()
     embed.eval()
     inter_rnn.eval()
     inter_rnn2.eval()
@@ -263,7 +279,9 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
         _batch_number += 1
 
-        top_k_predictions = run(xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts)
+        top_k_predictions, session_representations = run(xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths)
+
+        datahandler.store_user_session_representations(session_representations, user_list)
 
         # Evaluate predictions
         tester.evaluate_batch(top_k_predictions, targetvalues, sl)
@@ -276,7 +294,7 @@ while epoch <= MAX_EPOCHS:
             eta = "%.2f" % eta
             print("\t ETA:", eta, "minutes.")
         
-        xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts = datahandler.get_next_test_batch()
+        xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths = datahandler.get_next_test_batch()
 
     # Print final test stats for epoch
     test_stats, recall5, recall10, recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()

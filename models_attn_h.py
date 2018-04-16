@@ -32,8 +32,11 @@ class InterRNN(nn.Module):
             self.index_list.append(i)
         self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
+        self.previous_session_representations = [0] * 1000
 
-    def forward(self, hidden, current_session_batch, current_session_lengths):
+
+    def forward(self, user_list, input_embedding, session_lengths):
+        """
         current_session_batch = self.dropout(current_session_batch) # in the baseline-baseline model, the embeddings are passed through a dropout layer in IntraRNN before being used to create session representations
         prevoius_session_length_is_zero = torch.lt(current_session_lengths, 1)  # padding sessions have length zero (real sessions have minimum length 2)
         current_session_lengths = current_session_lengths + prevoius_session_length_is_zero.long()  # add one to session length if session count is zero (to avoid division by zero error)
@@ -48,6 +51,32 @@ class InterRNN(nn.Module):
         sum_x = current_session_batch.sum(1)
         mean_x = sum_x.div(current_session_lengths.unsqueeze(1).float())
         return mean_x
+        """
+        input_embedding = self.dropout(input_embedding)
+        sum_x = input_embedding.sum(1)
+        mean_x = sum_x.div(session_lengths.float())
+
+        all_session_representations = Variable(torch.zeros(len(user_list), 15, self.hidden_size)).cuda(self.gpu_no)
+        for i in range(len(user_list)):
+            if self.previous_session_representations[user_list[i]] == 0:
+                all_session_representations[i] = torch.zeros(15, 100).float()
+            elif len(self.previous_session_representations[user_list[i]]) < 15:
+                temp_sess_rep = list(self.previous_session_representations[user_list[i]])
+                while len(temp_sess_rep) < 15:
+                    temp_sess_rep.append([0] * 100)
+                all_session_representations[i] = torch.FloatTensor(temp_sess_rep)
+            else:
+                all_session_representations[i] = torch.FloatTensor(self.previous_session_representations[user_list[i]][-15:])
+
+        for i in range(len(user_list)):
+            if self.previous_session_representations[user_list[i]] == 0:
+                self.previous_session_representations[user_list[i]] = [mean_x[i].data.tolist()]
+            else:
+                self.previous_session_representations[user_list[i]].append(mean_x[i].data.tolist())
+
+        return all_session_representations, mean_x
+
+
 
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
@@ -77,8 +106,8 @@ class InterRNN2(nn.Module):
 
 
     def forward(self, hidden, all_session_representations, prevoius_session_counts):
-        all_session_representations = self.dropout1(all_session_representations)
-        output, hidden = self.gru(all_session_representations, hidden)
+        d_all_session_representations = self.dropout1(all_session_representations)
+        output, hidden = self.gru(d_all_session_representations, hidden)
 
         # find the last non-padded hidden state
         zeros = Variable(torch.zeros(prevoius_session_counts.size(0)).long()).cuda(self.gpu_no)

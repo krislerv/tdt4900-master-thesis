@@ -261,6 +261,7 @@ class IIRNNDataHandler:
             user = user_list[i]
             if(user != -1):
                 session_representation = list(sessions_representations[i])
+
                 session_timestamp = float(session_timestamps[i])
                 session_timestamp_bucket_id = int(session_timestamp_bucket_ids[i])
 
