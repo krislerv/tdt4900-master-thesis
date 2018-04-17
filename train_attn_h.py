@@ -49,7 +49,7 @@ elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
-    DROPOUT_RATE = 0
+    DROPOUT_RATE = 0.2
     MAX_EPOCHS = 200
 N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
@@ -72,8 +72,6 @@ message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
 print(message)
-print("SWITCHED")
-
 
 # initialize embedding table
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -229,6 +227,7 @@ while epoch <= MAX_EPOCHS:
 
     datahandler.reset_user_batch_data()
     datahandler.reset_user_session_representations()
+    inter_rnn.reset_session_representations()
     _batch_number = 0
     xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths = datahandler.get_next_train_batch()
     embed.train()
@@ -240,8 +239,6 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
 
         batch_loss, top_k_predictions, session_representations = run(xinput, targetvalues, sl, previous_session_batch, previous_session_lengths, prevoius_session_counts, user_list, sess_rep_batch, sess_rep_lengths)
-
-        print(session_representations)
 
         datahandler.store_user_session_representations(session_representations, user_list)
 
