@@ -84,6 +84,9 @@ class InterRNN(nn.Module):
             return hidden.cuda(self.gpu_no)
         return hidden
 
+    def reset_session_representations(self):
+        self.previous_session_representations = [0] * 1000
+
 
 class InterRNN2(nn.Module):
     def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, gpu_no=0):

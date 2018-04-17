@@ -78,7 +78,7 @@ elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
-    DROPOUT_RATE = 0
+    DROPOUT_RATE = 0.2
     MAX_EPOCHS = 50
 N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
@@ -364,8 +364,6 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
 
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = train(xinput, targetvalues, sl, session_reps, inter_session_seq_length, use_last_hidden_state, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list, previous_session_batch, previous_session_lengths)
-
-        print(sess_rep)
 
         # log inter attention weights
         if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
