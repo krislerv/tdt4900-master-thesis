@@ -15,6 +15,51 @@ class Embed(nn.Module):
         output = self.embedding_table(input)
         return output
 
+class SesssionRepresentationCreator(nn.Module):
+    def __init__(self, hidden_size, dropout, gpu_no=0):
+        super(SesssionRepresentationCreator, self).__init__()
+
+        self.hidden_size = hidden_size
+        self.gpu_no = gpu_no
+        self.dropout = nn.Dropout(dropout)
+        self.previous_session_representations = [0] * 1000
+
+    def forward(self, user_list, input_embedding, session_lengths):
+        #input_embedding = self.dropout(input_embedding)
+        sum_x = input_embedding.sum(1)
+        mean_x = sum_x.div(session_lengths.float())
+
+        all_session_representations = Variable(torch.zeros(len(user_list), 15, self.hidden_size)).cuda(self.gpu_no)
+        for i in range(len(user_list)):
+            user_id = user_list[i].data[0]
+            if self.previous_session_representations[user_id] == 0:
+                all_session_representations[i] = torch.zeros(15, 100).float()
+            elif len(self.previous_session_representations[user_id]) < 15:
+                temp_sess_rep = list(self.previous_session_representations[user_id])
+                while len(temp_sess_rep) < 15:
+                    temp_sess_rep.append([0] * 100)
+                all_session_representations[i] = torch.FloatTensor(temp_sess_rep)
+            else:
+                all_session_representations[i] = torch.FloatTensor(self.previous_session_representations[user_id][-15:])
+
+        for i in range(len(user_list)):
+            user_id = user_list[i].data[0]
+            if self.previous_session_representations[user_id] == 0:
+                self.previous_session_representations[user_id] = [mean_x[i].data.tolist()]
+            else:
+                self.previous_session_representations[user_id].append(mean_x[i].data.tolist())
+
+        return all_session_representations, mean_x
+
+    def init_hidden(self, batch_size, use_cuda):
+        hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
+        if use_cuda:
+            return hidden.cuda(self.gpu_no)
+        return hidden
+
+    def reset_session_representations(self):
+        self.previous_session_representations = [0] * 1000
+
 class InterRNN(nn.Module):
     def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, gpu_no=0):
         super(InterRNN, self).__init__()
@@ -66,13 +111,13 @@ class IntraRNN(nn.Module):
         self.linear = nn.Linear(hidden_size, n_items)
 
     def forward(self, input_embedding, hidden):
-        embedded_input = self.dropout1(input_embedding)
+        #embedded_input = self.dropout1(input_embedding)
 
-        gru_output, hidden = self.gru(embedded_input, hidden)
+        gru_output, hidden = self.gru(input_embedding, hidden)
 
         output = self.dropout2(gru_output)
         output = self.linear(output)
-        return output, hidden, embedded_input
+        return output, hidden, input_embedding
 
     def init_hidden(self, batch_size, use_cuda):
         hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))

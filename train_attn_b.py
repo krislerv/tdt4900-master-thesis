@@ -2,7 +2,7 @@ import datetime
 import os
 import time
 import numpy as np
-from models_attn_b import InterRNN, IntraRNN, Embed
+from models_attn_b import InterRNN, IntraRNN, Embed, SesssionRepresentationCreator
 from datahandler_attn_b import IIRNNDataHandler
 from test_util_h import Tester
 
@@ -91,6 +91,10 @@ if use_cuda:
     intra_rnn = intra_rnn.cuda(GPU_NO)
 intra_optimizer = optim.Adam(intra_rnn.parameters(), lr=LEARNING_RATE)
 
+sess_rep_creator = SesssionRepresentationCreator(INTER_INTERNAL_SIZE, DROPOUT_RATE, gpu_no=GPU_NO)
+if use_cuda:
+    sess_rep_creator = sess_rep_creator.cuda(GPU_NO)
+
 def run(input, target, session_lengths, session_reps, inter_session_seq_length, user_list):
     if intra_rnn.training:
         inter_optimizer.zero_grad()
@@ -114,8 +118,15 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
 
     input_embedding = embed(input)
 
+    input_embedding = F.dropout(input_embedding, DROPOUT_RATE, intra_rnn.training, False)
+
+    all_session_representations, mean_x = sess_rep_creator(user_list, input_embedding, session_lengths)
+
+    #if (all_session_representations == session_reps).float().mean().data[0] != 1.0:
+    #    print("something fucked")
+
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
-    inter_output, inter_hidden = inter_rnn(session_reps, inter_hidden, inter_session_seq_length)
+    inter_output, inter_hidden = inter_rnn(all_session_representations, inter_hidden, inter_session_seq_length)
 
     # call forward on intra gru layer with hidden state from inter
     intra_hidden = inter_hidden
@@ -170,11 +181,13 @@ while epoch <= MAX_EPOCHS:
 
     datahandler.reset_user_batch_data()
     datahandler.reset_user_session_representations()
+    sess_rep_creator.reset_session_representations()
     _batch_number = 0
     xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list = datahandler.get_next_train_batch()
     intra_rnn.train()
     inter_rnn.train()
     embed.train()
+    sess_rep_creator.train()
     while len(xinput) > int(BATCH_SIZE / 2):
         _batch_number += 1
         batch_start_time = time.time()
@@ -213,6 +226,7 @@ while epoch <= MAX_EPOCHS:
     intra_rnn.eval()
     inter_rnn.eval()
     embed.eval()
+    sess_rep_creator.eval()
     while len(xinput) > int(BATCH_SIZE / 2):
         batch_start_time = time.time()
         _batch_number += 1
