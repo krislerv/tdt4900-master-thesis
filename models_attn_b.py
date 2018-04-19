@@ -7,13 +7,40 @@ import random
 class Embed(nn.Module):
     def __init__(self, input_size, embedding_size):
         super(Embed, self).__init__()
-        self.embedding_table = nn.Embedding(input_size, embedding_size)
+        self.embedding_table = nn.Embedding(input_size, embedding_size, padding_idx=0)
         self.embedding_table.weight.data.copy_(torch.zeros(input_size,embedding_size).uniform_(-1,1))
         self.embedding_table.weight.data[0] = torch.zeros(embedding_size) #ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
     
     def forward(self, input):
         output = self.embedding_table(input)
         return output
+
+class SessRepEmbed(nn.Module):
+    def __init__(self, input_size, embedding_size):
+        super(SessRepEmbed, self).__init__()
+        self.embedding_table = nn.Embedding(input_size, embedding_size, padding_idx=0)
+        self.embedding_table.weight.data.copy_(torch.zeros(input_size,embedding_size).uniform_(-1,1))
+        self.embedding_table.weight.data[0] = torch.zeros(embedding_size) #ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
+    
+    def forward(self, input):
+        output = self.embedding_table(input)
+        return output
+
+class OnTheFlySessionRepresentations(nn.Module):
+    def __init__(self, hidden_size, dropout, gpu_no=0):
+        super(OnTheFlySessionRepresentations, self).__init__()
+
+        self.hidden_size = hidden_size
+        self.gpu_no = gpu_no
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, user_previous_session_batch_embedding, user_previous_session_lengths, user_prevoius_session_counts):
+        user_previous_session_batch_embedding_summed = user_previous_session_batch_embedding.sum(1)
+        mean_user_previous_session_batch_embedding = user_previous_session_batch_embedding_summed.transpose(0, 1).div(user_previous_session_lengths.float()).transpose(0, 1)
+
+        return mean_user_previous_session_batch_embedding
+        
+
 
 class SesssionRepresentationCreator(nn.Module):
     def __init__(self, hidden_size, dropout, gpu_no=0):
@@ -50,12 +77,6 @@ class SesssionRepresentationCreator(nn.Module):
                 self.previous_session_representations[user_id].append(mean_x[i].data.tolist())
 
         return all_session_representations, mean_x
-
-    def init_hidden(self, batch_size, use_cuda):
-        hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
-        if use_cuda:
-            return hidden.cuda(self.gpu_no)
-        return hidden
 
     def reset_session_representations(self):
         self.previous_session_representations = [0] * 1000
