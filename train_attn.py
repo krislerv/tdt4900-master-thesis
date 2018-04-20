@@ -252,8 +252,6 @@ def predict(input, session_lengths, session_reps, inter_session_seq_length, inpu
     sess_rep_timestamp_bucket_ids_batch = Variable(torch.LongTensor(sess_rep_timestamp_bucket_ids_batch))
     user_list = Variable(torch.LongTensor((user_list).tolist()))
 
-    
-
     if use_cuda:
         input = input.cuda(GPU_NO)
         #input_embedding = input_embedding.cuda(GPU_NO)

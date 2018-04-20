@@ -210,7 +210,7 @@ class IIRNNDataHandler:
             
             while (len(user_previous_sessions) < 15):
                 user_previous_sessions.append([[0, 0]] * 20)
-                user_previous_session_lengths.append(1)
+                user_previous_session_lengths.append(0)
 
             previous_session_batch.append(user_previous_sessions)
             previous_session_lengths.append(user_previous_session_lengths)
@@ -246,7 +246,7 @@ class IIRNNDataHandler:
         x = [session[:-1] for session in session_batch]
         y = [session[1:] for session in session_batch]
 
-        previous_session_batch = [[session[:-1] for session in user_sessions] for user_sessions in previous_session_batch]
+        #previous_session_batch = [[session[:-1] for session in user_sessions] for user_sessions in previous_session_batch]
 
         return x, y, session_lengths, sess_rep_batch, sess_rep_lengths, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts
 
