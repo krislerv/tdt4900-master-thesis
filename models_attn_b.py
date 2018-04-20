@@ -116,7 +116,7 @@ class OnTheFlySessionRepresentations(nn.Module):
         
 
 class InterRNN(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, gpu_no=0):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, use_delta_t_attn, gpu_no=0):
         super(InterRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -126,6 +126,7 @@ class InterRNN(nn.Module):
         self.gpu_no = gpu_no
 
         self.method = method
+        self.use_delta_t_attn = use_delta_t_attn
 
         self.gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
         self.dropout1 = nn.Dropout(dropout)
@@ -143,7 +144,11 @@ class InterRNN(nn.Module):
             self.user_attention = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
             self.user_scale = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
 
-    def forward(self, all_session_representations, hidden, previous_session_counts, user_list):
+        if use_delta_t_attn:
+            self.delta_embedding = nn.Embedding(169, embedding_size)
+            self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
+
+    def forward(self, all_session_representations, hidden, previous_session_counts, user_list, delta_t_hours):
         if self.method == "LHS":
             all_session_representations = self.dropout1(all_session_representations)
             output, _ = self.gru(all_session_representations, hidden)
@@ -174,8 +179,13 @@ class InterRNN(nn.Module):
             return mean_all_session_representations_summed.unsqueeze(0).contiguous()
 
         elif self.method == "ATTN-G" or self.method == "ATTN-L":
-            all_session_representations = self.dropout1(all_session_representations)
-            output, _ = self.gru(all_session_representations, hidden)
+            if self.use_delta_t_attn:
+                delta_t_hours = self.delta_embedding(delta_t_hours)
+                delta_t_hours = self.dropout1(delta_t_hours)
+                output, _ = self.gru(delta_t_hours, hidden)
+            else:
+                all_session_representations = self.dropout1(all_session_representations)
+                output, _ = self.gru(all_session_representations, hidden)
             # create a mask so that attention weights for "empty" outputs are zero
             previous_session_counts_expanded = previous_session_counts.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SESS_REP]
             indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SESS_REP]

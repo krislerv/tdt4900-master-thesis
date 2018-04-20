@@ -44,26 +44,18 @@ class IIRNNDataHandler:
     def set_session_timestamps(self):
         self.train_timestamps = [None] * self.num_users
         self.test_timestamps = [None] * self.num_users
-        self.train_timestamp_bucket_ids = [None] * self.num_users
-        self.test_timestamp_bucket_ids = [None] * self.num_users
         for k, v in self.trainset.items():
             timestamps = []
-            timestamp_bucket_ids = []
             for session_index in range(len(v)):
                 timestamp = self.trainset[k][session_index][0][0]
                 timestamps.append(timestamp)
-                timestamp_bucket_ids.append(datetime.datetime.utcfromtimestamp(timestamp).weekday() * 24 + datetime.datetime.utcfromtimestamp(timestamp).hour)
             self.train_timestamps[k] = timestamps
-            self.train_timestamp_bucket_ids[k] = timestamp_bucket_ids
         for k, v in self.testset.items():
             timestamps = []
-            timestamp_bucket_ids = []
             for session_index in range(len(v)):
                 timestamp = self.testset[k][session_index][0][0]
                 timestamps.append(timestamp)
-                timestamp_bucket_ids.append(datetime.datetime.utcfromtimestamp(timestamp).weekday() * 24 + datetime.datetime.utcfromtimestamp(timestamp).hour)
             self.test_timestamps[k] = timestamps
-            self.test_timestamp_bucket_ids[k] = timestamp_bucket_ids
 
     """
     Returns the unix time for a given event in the last session processed for the given user
@@ -148,7 +140,7 @@ class IIRNNDataHandler:
     def get_num_test_batches(self):
         return self.get_num_batches(self.testset)
 
-    def get_next_batch(self, dataset, dataset_session_lengths, timestamp_set, timestamp_bucket_ids_set, is_testing):
+    def get_next_batch(self, dataset, dataset_session_lengths, timestamp_set, is_testing):
         session_batch = []
         session_lengths = []
         sess_rep_batch = []
@@ -157,11 +149,11 @@ class IIRNNDataHandler:
         sess_rep_timestamps_batch = []
         sess_rep_timestamp_bucket_ids_batch = []
         input_timestamps = []
-        input_timestamp_bucket_ids = []
 
         previous_session_batch = []
         previous_session_lengths = []
         prevoius_session_counts = []
+        previous_session_timestamps = []
 
         # Decide which users to take sessions from. First count the number of remaining sessions
         remaining_sessions = [0]*len(self.users_with_remaining_sessions)
@@ -172,7 +164,7 @@ class IIRNNDataHandler:
         # index of users to get
         user_list = IIRNNDataHandler.get_N_highest_indexes(remaining_sessions, self.batch_size)
         if(len(user_list) == 0):
-            return [], [], [], [], [], [], [], [], []
+            return [], [], [], [], [], [], [], [], [], [], []
         for i in range(len(user_list)):
             user_list[i] = self.users_with_remaining_sessions[user_list[i]]
 
@@ -186,6 +178,7 @@ class IIRNNDataHandler:
             user_previous_sessions = []
             user_previous_session_lengths = []
             user_num_prev_sessions = 0
+            user_previous_session_timestamps = []
 
             for i in range(session_index - 1, session_index - 1 - self.MAX_SESSION_REPRESENTATIONS, -1):    # start at the previous session, loop backwards 15 times
                 if i < 0:
@@ -193,6 +186,7 @@ class IIRNNDataHandler:
                 user_previous_sessions.append(dataset[user][i])
                 user_previous_session_lengths.append(dataset_session_lengths[user][i])
                 user_num_prev_sessions += 1
+                user_previous_session_timestamps.append(timestamp_set[user][i])
             
             
             if is_testing and len(user_previous_sessions) < 15: # if not enough sessions from testset, add the last ones from trainset
@@ -202,19 +196,23 @@ class IIRNNDataHandler:
                     user_previous_sessions.append(self.trainset[user][i])
                     user_previous_session_lengths.append(self.train_session_lengths[user][i])
                     user_num_prev_sessions += 1
+                    user_previous_session_timestamps.append(self.train_timestamps[user][i])
                     if user_num_prev_sessions == 15:
                         break
             
             user_previous_sessions = list(reversed(user_previous_sessions))
             user_previous_session_lengths = list(reversed(user_previous_session_lengths))
+            user_previous_session_timestamps = list(reversed(user_previous_session_timestamps))
             
             while (len(user_previous_sessions) < 15):
                 user_previous_sessions.append([[0, 0]] * 20)
                 user_previous_session_lengths.append(0)
+                user_previous_session_timestamps.append(0)
 
             previous_session_batch.append(user_previous_sessions)
             previous_session_lengths.append(user_previous_session_lengths)
             prevoius_session_counts.append(user_num_prev_sessions)
+            previous_session_timestamps.append(user_previous_session_timestamps)
 
 
 
@@ -238,7 +236,6 @@ class IIRNNDataHandler:
                 self.users_with_remaining_sessions.remove(user)
 
             input_timestamps.append(timestamp_set[user][session_index])
-            input_timestamp_bucket_ids.append(timestamp_bucket_ids_set[user][session_index])
 
         #sort batch based on seq rep len
         session_batch = [[event[1] for event in session] for session in session_batch]
@@ -248,13 +245,13 @@ class IIRNNDataHandler:
 
         #previous_session_batch = [[session[:-1] for session in user_sessions] for user_sessions in previous_session_batch]
 
-        return x, y, session_lengths, sess_rep_batch, sess_rep_lengths, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts
+        return x, y, session_lengths, sess_rep_batch, sess_rep_lengths, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps
 
     def get_next_train_batch(self):
-        return self.get_next_batch(self.trainset, self.train_session_lengths, self.train_timestamps, self.train_timestamp_bucket_ids, False)
+        return self.get_next_batch(self.trainset, self.train_session_lengths, self.train_timestamps, False)
 
     def get_next_test_batch(self):
-        return self.get_next_batch(self.testset, self.test_session_lengths, self.test_timestamps, self.test_timestamp_bucket_ids, True)
+        return self.get_next_batch(self.testset, self.test_session_lengths, self.test_timestamps, True)
 
     def get_latest_epoch(self, epoch_file):
         if not os.path.isfile(epoch_file):
