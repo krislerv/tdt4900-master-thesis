@@ -99,9 +99,10 @@ class OnTheFlySessionRepresentations(nn.Module):
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)
 
             # apply attention weights
-            session_representations = torch.bmm(attn_weights.unsqueeze(1), user_previous_session_batch_embedding)
+            session_representations = torch.bmm(attn_weights.unsqueeze(1), output).squeeze()
 
-            session_representations = self.dropout(session_representations.squeeze())
+            #session_representations = self.dropout(session_representations)
+
 
             return session_representations
 
@@ -145,6 +146,7 @@ class InterRNN(nn.Module):
             self.user_scale = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
 
         if use_delta_t_attn:
+            self.delta_gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
             self.delta_embedding = nn.Embedding(169, embedding_size)
             self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
 
@@ -182,7 +184,9 @@ class InterRNN(nn.Module):
             if self.use_delta_t_attn:
                 delta_t_hours = self.delta_embedding(delta_t_hours)
                 delta_t_hours = self.dropout1(delta_t_hours)
-                output, _ = self.gru(delta_t_hours, hidden)
+                output, _ = self.delta_gru(delta_t_hours, hidden)
+                all_session_representations = self.dropout1(all_session_representations)
+                session_output, _ = self.gru(all_session_representations, hidden)
             else:
                 all_session_representations = self.dropout1(all_session_representations)
                 output, _ = self.gru(all_session_representations, hidden)
@@ -210,7 +214,10 @@ class InterRNN(nn.Module):
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)
 
             # apply attention weights
-            user_representations = torch.bmm(attn_weights.unsqueeze(1), all_session_representations)
+            if self.use_delta_t_attn:
+                user_representations = torch.bmm(attn_weights.unsqueeze(1), session_output)
+            else:
+                user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
 
             user_representations = self.dropout2(user_representations)
 

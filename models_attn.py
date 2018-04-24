@@ -51,7 +51,7 @@ class InterRNN(nn.Module):
             self.index_list = []
             for i in range(max_session_representations):
                 self.index_list.append(i)
-            self.index_list = torch.LongTensor(self.index_list).cuda(self.gpu_no)
+            self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
     def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps):
         # gets the output of the last non-zero session representation

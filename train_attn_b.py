@@ -23,8 +23,9 @@ dataset = lastfm
 use_cuda = True
 GPU_NO = 1
 
-method = "ATTN-G"  # LHS, AVG, ATTN-G, ATTN-L
-use_delta_t_attn = True
+method_inter = "ATTN-G"  # LHS, AVG, ATTN-G, ATTN-L
+method_on_the_fly = "ATTN-G"
+use_delta_t_attn = False
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -75,6 +76,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
+message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn)
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -88,7 +90,7 @@ if use_cuda:
 sess_rep_embed_optimizer = optim.Adam(sess_rep_embed.parameters(), lr=LEARNING_RATE)
 
 # initialize inter RNN
-inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method, use_delta_t_attn, gpu_no=GPU_NO)
+inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method_inter, use_delta_t_attn, gpu_no=GPU_NO)
 if use_cuda:
     inter_rnn = inter_rnn.cuda(GPU_NO)
 inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
@@ -99,7 +101,7 @@ if use_cuda:
     intra_rnn = intra_rnn.cuda(GPU_NO)
 intra_optimizer = optim.Adam(intra_rnn.parameters(), lr=LEARNING_RATE)
 
-on_the_fly_sess_reps = OnTheFlySessionRepresentations(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, method, gpu_no=GPU_NO)
+on_the_fly_sess_reps = OnTheFlySessionRepresentations(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, method_on_the_fly, gpu_no=GPU_NO)
 if use_cuda:
     on_the_fly_sess_reps = on_the_fly_sess_reps.cuda(GPU_NO)
 on_the_fly_sess_reps_optimizer = optim.Adam(on_the_fly_sess_reps.parameters(), lr=LEARNING_RATE)

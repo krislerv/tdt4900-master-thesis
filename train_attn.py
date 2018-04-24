@@ -28,7 +28,7 @@ use_last_hidden_state = False
 
 # Inter-session attention mechanisms
 use_hidden_state_attn = False
-use_delta_t_attn = False
+use_delta_t_attn = True
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
