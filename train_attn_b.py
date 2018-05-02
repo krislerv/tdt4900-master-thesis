@@ -15,17 +15,25 @@ from torch.autograd import Variable
 from tensorboard import Logger as TensorBoard
 
 # datasets
-reddit = "reddit-2-month"
+reddit = "subreddit"
 lastfm = "lastfm-3-months"
-dataset = lastfm
+dataset = reddit
 
 # GPU settings
 use_cuda = True
-GPU_NO = 1
+GPU_NO = 0
 
-method_inter = "ATTN-G"  # LHS, AVG, ATTN-G, ATTN-L
-method_on_the_fly = "ATTN-G"
+method_inter = "LHS"  # LHS, AVG, ATTN-G, ATTN-L
+method_on_the_fly = "LHS"
 use_delta_t_attn = False
+bidirectional = False
+attention_on = "output" # input, output
+
+# saving/loading of model parameters
+save_model_parameters = True
+resume_model = True
+resume_model_name = "2018-04-29-13-58-49-testing-attn-rnn-subreddit"    # unused if resume_model is False
+
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -34,7 +42,10 @@ DATASET_PATH = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
 # logging of testing results
 DATE_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
 TIME_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%H-%M-%S')
-RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset
+if resume_model:
+    RUN_NAME = resume_model_name
+else:
+    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset
 LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
@@ -76,7 +87,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
-message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn)
+message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn) + " attention_on=" + attention_on
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -84,34 +95,38 @@ if use_cuda:
     embed = embed.cuda(GPU_NO)
 embed_optimizer = optim.Adam(embed.parameters(), lr=LEARNING_RATE)
 
-sess_rep_embed = SessRepEmbed(N_ITEMS, EMBEDDING_SIZE)
-if use_cuda:
-    sess_rep_embed = sess_rep_embed.cuda(GPU_NO)
-sess_rep_embed_optimizer = optim.Adam(sess_rep_embed.parameters(), lr=LEARNING_RATE)
-
 # initialize inter RNN
-inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method_inter, use_delta_t_attn, gpu_no=GPU_NO)
+inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method_inter, use_delta_t_attn, bidirectional, attention_on, gpu_no=GPU_NO)
 if use_cuda:
     inter_rnn = inter_rnn.cuda(GPU_NO)
 inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
 
 # initialize intra RNN
-intra_rnn = IntraRNN(N_ITEMS, INTRA_INTERNAL_SIZE, EMBEDDING_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, gpu_no=GPU_NO)
+intra_rnn = IntraRNN(N_ITEMS, INTRA_INTERNAL_SIZE, EMBEDDING_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, bidirectional, gpu_no=GPU_NO)
 if use_cuda:
     intra_rnn = intra_rnn.cuda(GPU_NO)
 intra_optimizer = optim.Adam(intra_rnn.parameters(), lr=LEARNING_RATE)
 
-on_the_fly_sess_reps = OnTheFlySessionRepresentations(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, method_on_the_fly, gpu_no=GPU_NO)
+on_the_fly_sess_reps = OnTheFlySessionRepresentations(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, method_on_the_fly, bidirectional, attention_on, gpu_no=GPU_NO)
 if use_cuda:
     on_the_fly_sess_reps = on_the_fly_sess_reps.cuda(GPU_NO)
 on_the_fly_sess_reps_optimizer = optim.Adam(on_the_fly_sess_reps.parameters(), lr=LEARNING_RATE)
+
+if resume_model:
+    embed.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-embed_model.pth"))
+    embed_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-embed_optimizer.pth"))
+    inter_rnn.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter_model.pth"))
+    inter_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter_optimizer.pth"))
+    intra_rnn.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-intra_model.pth"))
+    intra_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-intra_optimizer.pth"))
+    on_the_fly_sess_reps.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-on_the_fly_sess_reps_model.pth"))
+    on_the_fly_sess_reps_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-on_the_fly_sess_reps_optimizer.pth"))
 
 def run(input, target, session_lengths, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps):
     if intra_rnn.training:
         inter_optimizer.zero_grad()
         intra_optimizer.zero_grad()
         embed_optimizer.zero_grad()
-        sess_rep_embed_optimizer.zero_grad()
         on_the_fly_sess_reps_optimizer.zero_grad()
 
     input = Variable(torch.LongTensor(input))
@@ -125,7 +140,6 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     prevoius_session_counts = Variable(torch.LongTensor(prevoius_session_counts))
     input_timestamps = Variable(torch.FloatTensor(input_timestamps))
     previous_session_timestamps = Variable(torch.FloatTensor(previous_session_timestamps))
-
 
     if use_cuda:
         input = input.cuda(GPU_NO)
@@ -143,7 +157,8 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     input_embedding = embed(input)
     input_embedding = F.dropout(input_embedding, DROPOUT_RATE, intra_rnn.training, False)
 
-    all_session_representations = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, INTER_INTERNAL_SIZE)).cuda(GPU_NO)
+    all_session_representations = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, (1 + bidirectional) * INTER_INTERNAL_SIZE)).cuda(GPU_NO)
+
     for i in range(input.size(0)):
         user_previous_session_batch = previous_session_batch[i]
         user_previous_session_lengths = previous_session_lengths[i]
@@ -178,7 +193,6 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
         inter_optimizer.step()
         intra_optimizer.step()
         embed_optimizer.step()
-        sess_rep_embed_optimizer.step()
         on_the_fly_sess_reps_optimizer.step()
 
     # get average pooling of input for session representations
@@ -225,7 +239,6 @@ while epoch <= MAX_EPOCHS:
     intra_rnn.train()
     inter_rnn.train()
     embed.train()
-    sess_rep_embed.train()
     on_the_fly_sess_reps.train()
     while len(xinput) > int(BATCH_SIZE / 2):
         _batch_number += 1
@@ -264,7 +277,6 @@ while epoch <= MAX_EPOCHS:
     intra_rnn.eval()
     inter_rnn.eval()
     embed.eval()
-    sess_rep_embed.eval()
     on_the_fly_sess_reps.eval()
     while len(xinput) > int(BATCH_SIZE / 2):
         batch_start_time = time.time()
@@ -296,7 +308,7 @@ while epoch <= MAX_EPOCHS:
         datahandler.log_config(message)
     datahandler.log_test_stats(epoch, epoch_loss, test_stats)
     tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
-    tensorboard.scalar_summary('Recall@10', current_recall5, epoch)
+    tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
     tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
     tensorboard.scalar_summary('MRR@5', mrr5, epoch)
     tensorboard.scalar_summary('MRR@10', mrr10, epoch)
@@ -304,3 +316,13 @@ while epoch <= MAX_EPOCHS:
     tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
 
     epoch += 1
+
+    if save_model_parameters:
+        torch.save(embed.state_dict(), HOME + "/savestates/" + RUN_NAME + "-embed_model.pth")
+        torch.save(inter_rnn.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter_model.pth")
+        torch.save(intra_rnn.state_dict(), HOME + "/savestates/" + RUN_NAME + "-intra_model.pth")
+        torch.save(on_the_fly_sess_reps.state_dict(), HOME + "/savestates/" + RUN_NAME + "-on_the_fly_sess_reps_model.pth")
+        torch.save(embed_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-embed_optimizer.pth")
+        torch.save(inter_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-inter_optimizer.pth")
+        torch.save(intra_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-intra_optimizer.pth")
+        torch.save(on_the_fly_sess_reps_optimizer.state_dict(), HOME + "/savestates/" + RUN_NAME + "-on_the_fly_sess_reps_optimizer.pth")

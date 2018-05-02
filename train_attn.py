@@ -28,11 +28,11 @@ use_last_hidden_state = False
 
 # Inter-session attention mechanisms
 use_hidden_state_attn = False
-use_delta_t_attn = True
+use_delta_t_attn = False
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
-use_intra_attn = False
+use_intra_attn = True
 user_intra_delta_t_attn = False # not used if use_intra_attn is False
 use_per_user_intra_attn = False # not used if use_intra_attn is False
 
@@ -47,7 +47,7 @@ resume_model_name = "2018-03-07-18-04-35-testing-attn-rnn-lastfm-low-low-True-Fa
 
 # GPU settings
 use_cuda = True
-GPU_NO = 0
+GPU_NO = 1
 
 # dataset path
 HOME = os.path.expanduser('~')
@@ -435,7 +435,7 @@ while epoch <= MAX_EPOCHS:
         datahandler.log_config(message)
     datahandler.log_test_stats(epoch, epoch_loss, test_stats)
     tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
-    tensorboard.scalar_summary('Recall@10', current_recall5, epoch)
+    tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
     tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
     tensorboard.scalar_summary('MRR@5', mrr5, epoch)
     tensorboard.scalar_summary('MRR@10', mrr10, epoch)

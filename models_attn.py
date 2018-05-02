@@ -147,22 +147,22 @@ class IntraRNN(nn.Module):
 
             #self.va = nn.Linear(2 * self.hidden_size, 1, bias=False)
             #self.fff = nn.Linear(2 * self.hidden_size, 2 * self.hidden_size, bias=False)
-            self.wa = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-            self.ua = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-            self.va = nn.Linear(self.hidden_size, 1, bias=False)
-            self.fff = nn.Linear((3 if use_delta_t_attn else 2) * self.hidden_size, 1, bias=False)
+            #self.wa = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+            #self.ua = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+            self.va = nn.Linear(2*self.hidden_size, 1, bias=False)
+            #self.fff = nn.Linear((3 if use_delta_t_attn else 2) * self.hidden_size, 1, bias=False)
 
-            self.lin1 = nn.Linear(hidden_size, 1)
-            self.lin2 = nn.Linear(hidden_size, 1)
+            #self.lin1 = nn.Linear(hidden_size, 1)
+            #self.lin2 = nn.Linear(hidden_size, 1)
 
-            self.hidden_linear = nn.Linear(hidden_size, hidden_size)
-            self.inter_linear = nn.Linear(hidden_size, hidden_size)
+            #self.hidden_linear = nn.Linear(hidden_size, hidden_size)
+            #self.inter_linear = nn.Linear(hidden_size, hidden_size)
 
-            self.delta_embedding = nn.Embedding(169, embedding_size)
-            self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
+            #self.delta_embedding = nn.Embedding(169, embedding_size)
+            #self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
 
-            self.user_embedding = nn.Embedding(1000, embedding_size) # TODO: don't hardcode num_users
-            self.user_embedding.weight.data.copy_(torch.zeros(1000, embedding_size).uniform_(-1, 1))
+            #self.user_embedding = nn.Embedding(1000, embedding_size) # TODO: don't hardcode num_users
+            #self.user_embedding.weight.data.copy_(torch.zeros(1000, embedding_size).uniform_(-1, 1))
 
             if use_per_user_intra_attn:
                 self.inter_params = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
@@ -170,8 +170,8 @@ class IntraRNN(nn.Module):
                 self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
                 self.linear_test1_params = nn.ModuleList([nn.Linear(2 * hidden_size, hidden_size) for i in range(1000)])
 
-            self.linear_test1 = nn.Linear(2*hidden_size, hidden_size)
-            self.linear_test2 = nn.Linear(2*hidden_size, hidden_size)
+            self.linear_test1 = nn.Linear(2*hidden_size, 2*hidden_size)
+            #self.linear_test2 = nn.Linear(2*hidden_size, hidden_size)
 
 
     def forward(self, input, input_embedding, hidden, inter_output, delta_t_h, user_list):
@@ -181,7 +181,7 @@ class IntraRNN(nn.Module):
         if self.use_attn:
             ### ALL
             #user_list = self.user_embedding(user_list)
-            delta_t_h = self.delta_embedding(delta_t_h)
+            #delta_t_h = self.delta_embedding(delta_t_h)
             hidden_t = hidden.transpose(0, 1)
 
             ### BASELINE
@@ -197,10 +197,10 @@ class IntraRNN(nn.Module):
                         hidden_t_a[i] = self.hidden_params[user_list[i].data[0]](hidden_t[i])
                         result[i] = torch.tanh(self.linear_test1_params[user_list[i].data[0]](torch.cat((hidden_t_a[i].expand(self.max_session_representations, self.hidden_size), inter_output_a[i]), dim=1)))
                 else:
-                    hidden_t_a = self.wa(hidden_t)
-                    inter_output_a = self.ua(inter_output)
-                    #hidden_t_a = hidden_t
-                    #inter_output_a = inter_output
+                    #hidden_t_a = self.wa(hidden_t)
+                    #inter_output_a = self.ua(inter_output)
+                    hidden_t_a = hidden_t
+                    inter_output_a = inter_output
                     result = torch.tanh(self.linear_test1(torch.cat((hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size), inter_output_a), dim=2)))  # concat last hidden and inter output
                     #result = torch.tanh(hidden_t_a.expand(input.size(0), self.max_session_representations, self.hidden_size) + inter_output_a)                      # sum last hidden and inter output
             if self.use_per_user_intra_attn:

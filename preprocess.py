@@ -9,6 +9,16 @@ lastfm = "lastfm-high-high-2"
 
 create_lastfm_cet = False
 
+create_time_filtered_dataset = False
+time_filter_months = 3 # number of months of data to include per user, unused if create_time_filtered_dataset is False
+
+create_user_statistic_filtered_dataset = False
+avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py (lastfm)
+avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py (lastfm)
+remove_above_avg_session_length = True
+remove_above_avg_session_count = True
+
+
 dataset = reddit
 
 home = os.path.expanduser('~')
@@ -36,7 +46,7 @@ elif dataset == lastfm:
 
 MAX_SESSION_LENGTH = 20     # maximum number of actions in a session (or more precisely, how far into the future an action affects future actions. This is important for training, but when running, we can have as long sequences as we want! Just need to keep the hidden state and compute the next action)
 MAX_SESSION_LENGTH_PRE_SPLIT = MAX_SESSION_LENGTH * 2
-MINIMUM_REQUIRED_SESSIONS = 3 # The dual-RNN should have minimum 2 two train + 1 to test
+MINIMUM_REQUIRED_SESSIONS = 3 # The dual-RNN should have minimum 2 to train + 1 to test
 PAD_VALUE = 0
 
 
@@ -148,11 +158,16 @@ def filter_timestamps():
         if last_user_id != user_id:
             first_user_timestamp = timestamp
             last_user_id = user_id
-        #if timestamp - first_user_timestamp > 25e5:  # about one month
-        #if timestamp - first_user_timestamp > 5e6:  # about two months
-        if timestamp - first_user_timestamp > 8e6: # about three months
-            t_skip += 1
-            continue
+        if create_time_filtered_dataset:
+            if time_filter_months == 1 and timestamp - first_user_timestamp > 25e5:  # about one month
+                t_skip += 1
+                continue
+            elif time_filter_months == 2 and timestamp - first_user_timestamp > 5e6:  # about two months
+                t_skip += 1
+                continue
+            elif time_filter_months == 3 and timestamp - first_user_timestamp > 8e6: # about three months
+                t_skip += 1
+                continue
         t_non_skip += 1
         new_dataset_list.append(line)
 
@@ -295,15 +310,14 @@ def sort_and_split_usersessions():
     for user in to_be_removed:
         new_user_sessions.pop(user)
 
-    """
-    to_be_removed =  user_avg_session_length_filter(new_user_sessions, False)
-    for user in to_be_removed:
-        new_user_sessions.pop(user)
+    if create_user_statistic_filtered_dataset:
+        to_be_removed =  user_avg_session_length_filter(new_user_sessions, remove_above_avg_session_length)
+        for user in to_be_removed:
+            new_user_sessions.pop(user)
 
-    to_be_removed =  user_avg_session_count_filter(new_user_sessions, False)
-    for user in to_be_removed:
-        new_user_sessions.pop(user)
-    """
+        to_be_removed =  user_avg_session_count_filter(new_user_sessions, remove_above_avg_session_count)
+        for user in to_be_removed:
+            new_user_sessions.pop(user)
 
     # Do a remapping to account for removed data
     print("remapping to account for removed data...")
@@ -346,8 +360,6 @@ def user_avg_session_length_filter(new_user_sessions, higher):
 
         user_avg_session_lengths[k] = user_event_count / user_session_count
 
-    avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py
-
     to_be_removed = []
 
     for i in range(len(user_avg_session_lengths)):
@@ -356,16 +368,12 @@ def user_avg_session_length_filter(new_user_sessions, higher):
         elif not higher and user_avg_session_lengths[i] < avg_session_length and user_avg_session_lengths[i] > 0:
             to_be_removed.append(i)
 
-    print(to_be_removed)
     return to_be_removed
 
 def user_avg_session_count_filter(new_user_sessions, higher):
     user_session_counts = [0]*1000
     for k, v in new_user_sessions.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
         user_session_counts[k] = len(v)
-
-
-    avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py
 
     to_be_removed = []
 
@@ -375,10 +383,7 @@ def user_avg_session_count_filter(new_user_sessions, higher):
         elif not higher and user_session_counts[i] < avg_session_count and user_session_counts[i] > 0:
             to_be_removed.append(i)
 
-    print(to_be_removed)
     return to_be_removed
-
-
 
 def get_session_lengths(dataset):
     session_lengths = {}

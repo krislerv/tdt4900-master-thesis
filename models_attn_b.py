@@ -27,7 +27,7 @@ class SessRepEmbed(nn.Module):
         return output
 
 class OnTheFlySessionRepresentations(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, method, gpu_no=0):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, method, bidirectional, attention_on, gpu_no=0):
         super(OnTheFlySessionRepresentations, self).__init__()
 
         self.embedding_size = embedding_size
@@ -37,12 +37,14 @@ class OnTheFlySessionRepresentations(nn.Module):
         self.method = method
 
         self.gpu_no = gpu_no
+        self.bidirectional = bidirectional
+        self.attention_on = attention_on
 
         self.dropout = nn.Dropout(dropout)
-        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
+        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
 
-        self.attention = nn.Linear(hidden_size, hidden_size)
-        self.scale = nn.Linear(hidden_size, 1, bias=False)
+        self.attention = nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size)
+        self.scale = nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False)
 
         self.index_list = []
         for i in range(20):
@@ -50,8 +52,8 @@ class OnTheFlySessionRepresentations(nn.Module):
         self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
         if method == "ATTN-L":
-            self.user_attention = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
-            self.user_scale = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
+            self.user_attention = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size) for i in range(1000)])
+            self.user_scale = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False) for i in range(1000)])
 
     def forward(self, hidden, user_previous_session_batch_embedding, user_previous_session_lengths, user_prevoius_session_counts, user_id):
         if self.method == "LHS":
@@ -83,10 +85,10 @@ class OnTheFlySessionRepresentations(nn.Module):
             user_previous_session_lengths_expanded = user_previous_session_lengths.unsqueeze(1).expand(output.size(0), output.size(1))     # [MAX_SESS_REP, MAX_SEQ_LEN]
             indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [MAX_SESS_REP, MAX_SEQ_LEN]
             mask = torch.le(indexes, user_previous_session_lengths_expanded) # [MAX_SESS_REP, MAX_SEQ_LEN]  i-th element in each batch is 1 if it is a real item, 0 otherwise
-            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float() * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [MAX_SESS_REP, MAX_SEQ_LEN, HIDDEN_SIZE]
+            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float()# * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [MAX_SESS_REP, MAX_SEQ_LEN, HIDDEN_SIZE]
 
             # apply mask
-            output = output + mask
+            output = output * mask
 
             # compute attention weights
             if self.method == "ATTN-G":
@@ -99,25 +101,28 @@ class OnTheFlySessionRepresentations(nn.Module):
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)
 
             # apply attention weights
-            session_representations = torch.bmm(attn_weights.unsqueeze(1), output).squeeze()
+            if self.attention_on == "input":
+                session_representations = torch.bmm(attn_weights.unsqueeze(1), user_previous_session_batch_embedding).squeeze()
+            elif self.attention_on == "output":
+                session_representations = torch.bmm(attn_weights.unsqueeze(1), output).squeeze()
+            else:
+                raise Exception("Invalid attention type")
 
             #session_representations = self.dropout(session_representations)
-
-
             return session_representations
 
         else:
             raise Exception("Invalid method")
 
     def init_hidden(self, batch_size, use_cuda):
-        hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
+        hidden = Variable(torch.zeros((1 + self.bidirectional) * self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
             return hidden.cuda(self.gpu_no)
         return hidden
         
 
 class InterRNN(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, use_delta_t_attn, gpu_no=0):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, use_delta_t_attn, bidirectional, attention_on, gpu_no=0):
         super(InterRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -128,13 +133,15 @@ class InterRNN(nn.Module):
 
         self.method = method
         self.use_delta_t_attn = use_delta_t_attn
+        self.bidirectional = bidirectional
+        self.attention_on = attention_on
 
-        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
+        self.gru = nn.GRU((1 + self.bidirectional) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-        self.attention = nn.Linear(hidden_size, hidden_size)
-        self.scale = nn.Linear(hidden_size, 1, bias=False)
+        self.attention = nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size)
+        self.scale = nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False)
 
         self.index_list = []
         for i in range(self.max_session_representations):
@@ -142,8 +149,8 @@ class InterRNN(nn.Module):
         self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
         if method == "ATTN-L":
-            self.user_attention = nn.ModuleList([nn.Linear(hidden_size, hidden_size) for i in range(1000)])
-            self.user_scale = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
+            self.user_attention = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size) for i in range(1000)])
+            self.user_scale = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False) for i in range(1000)])
 
         if use_delta_t_attn:
             self.delta_gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
@@ -194,10 +201,10 @@ class InterRNN(nn.Module):
             previous_session_counts_expanded = previous_session_counts.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SESS_REP]
             indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SESS_REP]
             mask = torch.lt(indexes, previous_session_counts_expanded) # [BATCH_SIZE, MAX_SESS_REP]  i-th element in each batch is 1 if it is a real sess rep, 0 otherwise
-            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float() * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [BATCH_SIZE, MAX_SESS_REP, HIDDEN_SIZE]
+            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float()# * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [BATCH_SIZE, MAX_SESS_REP, HIDDEN_SIZE]
 
             # apply mask
-            output = output + mask
+            output = output * mask
 
             # compute attention weights
             if self.method == "ATTN-G":
@@ -217,7 +224,12 @@ class InterRNN(nn.Module):
             if self.use_delta_t_attn:
                 user_representations = torch.bmm(attn_weights.unsqueeze(1), session_output)
             else:
-                user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
+                if self.attention_on == "input":
+                    user_representations = torch.bmm(attn_weights.unsqueeze(1), all_session_representations)
+                elif self.attention_on == "output":
+                    user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
+                else:
+                    raise Exception("Invalid attention type")
 
             user_representations = self.dropout2(user_representations)
 
@@ -228,13 +240,13 @@ class InterRNN(nn.Module):
 
     # initialize hidden with variable batch size
     def init_hidden(self, batch_size, use_cuda):
-        hidden = Variable(torch.zeros(self.n_layers, batch_size, self.hidden_size))
+        hidden = Variable(torch.zeros((1 + self.bidirectional) * self.n_layers, batch_size, self.hidden_size))
         if use_cuda:
             return hidden.cuda(self.gpu_no)
         return hidden
 
 class IntraRNN(nn.Module):
-    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, gpu_no=0):
+    def __init__(self, n_items, hidden_size, embedding_size, n_layers, dropout, max_session_representations, bidirectional, gpu_no=0):
         super(IntraRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -243,11 +255,12 @@ class IntraRNN(nn.Module):
         self.max_session_representations = max_session_representations
 
         self.gpu_no = gpu_no
+        self.bidirectional = bidirectional
 
-        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
+        self.gru = nn.GRU(embedding_size, (1 + self.bidirectional) * hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.dropout1 = nn.Dropout(p=dropout)
         self.dropout2 = nn.Dropout(p=dropout)
-        self.linear = nn.Linear(hidden_size, n_items)
+        self.linear = nn.Linear((1 + self.bidirectional) * hidden_size, n_items)
 
     def forward(self, input_embedding, hidden):
         #embedded_input = self.dropout1(input_embedding)
