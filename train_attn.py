@@ -25,13 +25,13 @@ use_last_hidden_state = False
 bidirectional = True
 
 # Inter-session attention mechanisms
-use_hidden_state_attn = True
-use_delta_t_attn = True
+use_hidden_state_attn = False
+use_delta_t_attn = False
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
-use_intra_attn = False
-intra_attn_method = "cat"   # options: cat, sum
+use_intra_attn = True
+intra_attn_method = "sum"   # options: cat, sum
 use_per_user_intra_attn = False # not used if use_intra_attn is False
 
 # logging of attention weights
@@ -183,7 +183,7 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
         if intra_rnn.training:
             loss = 0
         output = Variable(torch.zeros(19, input_embedding.size(0), N_ITEMS)).cuda(GPU_NO)
-        gru_output = Variable(torch.zeros(19, input_embedding.size(0), INTRA_INTERNAL_SIZE)).cuda(GPU_NO)
+        gru_output = Variable(torch.zeros(19, input_embedding.size(0), (1 + bidirectional) * INTRA_INTERNAL_SIZE)).cuda(GPU_NO)
         cat_embedded_input = Variable(torch.zeros(19, input_embedding.size(0), INTRA_INTERNAL_SIZE)).cuda(GPU_NO)
         intra_attn_weights = Variable(torch.zeros(19, input_embedding.size(0), MAX_SESSION_REPRESENTATIONS)).cuda(GPU_NO)
         for i in range(input.size(1)):
@@ -233,8 +233,6 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     hidden_out = hidden_out.unsqueeze(0)
 
     # get average pooling of input for session representations
-    print(input)
-    print(session_lengths)
     sum_x = cat_embedded_input.sum(1)
     mean_x = sum_x.div(session_lengths.float())
 
