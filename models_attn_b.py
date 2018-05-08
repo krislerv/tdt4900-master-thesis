@@ -136,7 +136,7 @@ class InterRNN(nn.Module):
         self.bidirectional = bidirectional
         self.attention_on = attention_on
 
-        self.gru = nn.GRU((1 + self.bidirectional) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
+        self.gru = nn.GRU((1 + (self.bidirectional or self.use_delta_t_attn)) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
@@ -191,9 +191,9 @@ class InterRNN(nn.Module):
             if self.use_delta_t_attn:
                 delta_t_hours = self.delta_embedding(delta_t_hours)
                 delta_t_hours = self.dropout1(delta_t_hours)
-                output, _ = self.delta_gru(delta_t_hours, hidden)
                 all_session_representations = self.dropout1(all_session_representations)
-                session_output, _ = self.gru(all_session_representations, hidden)
+                concatenated_input = torch.cat((delta_t_hours, all_session_representations), dim=2)
+                output, _ = self.gru(concatenated_input, hidden)
             else:
                 all_session_representations = self.dropout1(all_session_representations)
                 output, _ = self.gru(all_session_representations, hidden)
@@ -221,15 +221,12 @@ class InterRNN(nn.Module):
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)
 
             # apply attention weights
-            if self.use_delta_t_attn:
-                user_representations = torch.bmm(attn_weights.unsqueeze(1), session_output)
+            if self.attention_on == "input":
+                user_representations = torch.bmm(attn_weights.unsqueeze(1), all_session_representations)
+            elif self.attention_on == "output":
+                user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
             else:
-                if self.attention_on == "input":
-                    user_representations = torch.bmm(attn_weights.unsqueeze(1), all_session_representations)
-                elif self.attention_on == "output":
-                    user_representations = torch.bmm(attn_weights.unsqueeze(1), output)
-                else:
-                    raise Exception("Invalid attention type")
+                raise Exception("Invalid attention type")
 
             user_representations = self.dropout2(user_representations)
 

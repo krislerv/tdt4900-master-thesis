@@ -2,7 +2,7 @@ from tensorboard import Logger as TensorBoard
 
 tensorboard = TensorBoard('./logs')
 
-file = open("testlog manual/hidden 1000 test.txt", "r")
+file = open("testlog manual/hierarcihcal global attention lastfm 3 months attention on output.txt", "r")
 
 epoch = 1
 

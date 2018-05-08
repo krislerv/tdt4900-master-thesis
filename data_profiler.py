@@ -85,7 +85,7 @@ def timestamp_distribution():
     plt.show()
 
 def avg_session_length():
-    dataset = "lastfm-full"
+    dataset = "subreddit"
     dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
     dataset = pickle.load(open(dataset_path, 'rb'))
 
@@ -281,7 +281,7 @@ def time_between_first_and_last_session_per_user():
         print(delta_time)
 
 def avg_session_count():
-    dataset = "lastfm-full"
+    dataset = "subreddit"
     dataset_path = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
     dataset = pickle.load(open(dataset_path, 'rb'))
 

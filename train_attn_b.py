@@ -17,21 +17,21 @@ from tensorboard import Logger as TensorBoard
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm-3-months"
-dataset = reddit
+dataset = lastfm
 
 # GPU settings
 use_cuda = True
 GPU_NO = 0
 
-method_inter = "LHS"  # LHS, AVG, ATTN-G, ATTN-L
-method_on_the_fly = "LHS"
+method_inter = "ATTN-G"  # LHS, AVG, ATTN-G, ATTN-L
+method_on_the_fly = "ATTN-G"
 use_delta_t_attn = False
-bidirectional = False
+bidirectional = True
 attention_on = "output" # input, output
 
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = True
+resume_model = False
 resume_model_name = "2018-04-29-13-58-49-testing-attn-rnn-subreddit"    # unused if resume_model is False
 
 

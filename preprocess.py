@@ -4,22 +4,25 @@ import os
 import time
 
 runtime = time.time()
-reddit = "reddit-3-month"
+reddit = "reddit-removed-low-low"
 lastfm = "lastfm-high-high-2"
+
+dataset = reddit
 
 create_lastfm_cet = False
 
 create_time_filtered_dataset = False
 time_filter_months = 3 # number of months of data to include per user, unused if create_time_filtered_dataset is False
 
-create_user_statistic_filtered_dataset = False
-avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py (lastfm)
-avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py (lastfm)
-remove_above_avg_session_length = True
-remove_above_avg_session_count = True
-
-
-dataset = reddit
+create_user_statistic_filtered_dataset = True
+if dataset == lastfm:
+    avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py (lastfm)
+    avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py (lastfm)
+elif dataset == reddit:
+    avg_session_length = 2.017  # calculated from avg_session_length() in data_profiler.py (reddit)
+    avg_session_count = 62.147  # calculated from avg_session_count() in data_profiler.py (reddit)
+remove_above_avg_session_length = False
+remove_above_avg_session_count = False
 
 home = os.path.expanduser('~')
 
@@ -350,7 +353,7 @@ def sort_and_split_usersessions():
 
 # filters out those users that have a higher than average average session length (or lower than average if the higher parameter is set to false)
 def user_avg_session_length_filter(new_user_sessions, higher):
-    user_avg_session_lengths = [0]*1000
+    user_avg_session_lengths = [0]*100000
     for k, v in new_user_sessions.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
         user_event_count = 0
         user_session_count = 0
@@ -368,10 +371,12 @@ def user_avg_session_length_filter(new_user_sessions, higher):
         elif not higher and user_avg_session_lengths[i] < avg_session_length and user_avg_session_lengths[i] > 0:
             to_be_removed.append(i)
 
+    print(len(to_be_removed))
+
     return to_be_removed
 
 def user_avg_session_count_filter(new_user_sessions, higher):
-    user_session_counts = [0]*1000
+    user_session_counts = [0]*100000
     for k, v in new_user_sessions.items():  # k = user id, v = sessions (list containing lists (sessions) containing lists (tuples of epoch timestamp, event aka artist/subreddit id))
         user_session_counts[k] = len(v)
 
@@ -382,6 +387,8 @@ def user_avg_session_count_filter(new_user_sessions, higher):
             to_be_removed.append(i)
         elif not higher and user_session_counts[i] < avg_session_count and user_session_counts[i] > 0:
             to_be_removed.append(i)
+
+    print(len(to_be_removed))
 
     return to_be_removed
 
@@ -481,7 +488,7 @@ if not file_exists(DATASET_W_CONVERTED_TIMESTAMPS):
     elif dataset == lastfm:
         convert_timestamps_lastfm()
 
-if not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
+if create_time_filtered_dataset and not file_exists(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS):
     print("Filtering timestamps")
     filter_timestamps()
 
