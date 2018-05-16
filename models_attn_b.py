@@ -76,6 +76,7 @@ class OnTheFlySessionRepresentations(nn.Module):
             user_previous_session_batch_embedding_summed = user_previous_session_batch_embedding.sum(1)
             mean_user_previous_session_batch_embedding = user_previous_session_batch_embedding_summed.transpose(0, 1).div(user_previous_session_lengths.float()).transpose(0, 1)
 
+
             return mean_user_previous_session_batch_embedding   # [MAX_SESS_REP x EMBEDDING SIZE]
 
         elif self.method == "ATTN-G" or self.method == "ATTN-L":
@@ -122,7 +123,7 @@ class OnTheFlySessionRepresentations(nn.Module):
         
 
 class InterRNN(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, use_delta_t_attn, bidirectional, attention_on, gpu_no=0):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, method, on_the_fly_method, use_delta_t_attn, bidirectional, attention_on, gpu_no=0):
         super(InterRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -136,7 +137,7 @@ class InterRNN(nn.Module):
         self.bidirectional = bidirectional
         self.attention_on = attention_on
 
-        self.gru = nn.GRU((1 + (self.bidirectional or self.use_delta_t_attn)) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
+        self.gru = nn.GRU((1 + ((self.bidirectional and not on_the_fly_method == "AVG") or self.use_delta_t_attn)) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 

@@ -15,23 +15,26 @@ from torch.autograd import Variable
 from tensorboard import Logger as TensorBoard
 
 # datasets
-reddit = "reddit-2-month"
-lastfm = "lastfm-3-months"
-dataset = lastfm
+reddit = "subreddit"
+lastfm = "lastfm-full"
+dataset = reddit
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
-use_last_hidden_state = False
+if dataset == lastfm:
+    use_last_hidden_state = False
+else:
+    use_last_hidden_state = True
 
 bidirectional = True
 
 # Inter-session attention mechanisms
 use_hidden_state_attn = False
-use_delta_t_attn = False
+use_delta_t_attn = True
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
-use_intra_attn = True
-intra_attn_method = "sum"   # options: cat, sum
+use_intra_attn = False
+intra_attn_method = "cat"   # options: cat, sum
 use_per_user_intra_attn = False # not used if use_intra_attn is False
 
 # logging of attention weights
@@ -39,9 +42,9 @@ log_inter_attn = False
 log_intra_attn = False
 
 # saving/loading of model parameters
-save_model_parameters = False
-resume_model = False
-resume_model_name = "2018-05-04-19-10-01-testing-attn-rnn-lastfm-full-False-False-False"    # unused if resume_model is False
+save_model_parameters = True
+resume_model = True
+resume_model_name = "2018-05-12-10-21-24-testing-attn-rnn-subreddit-False-False"    # unused if resume_model is False
 
 # GPU settings
 use_cuda = True
@@ -82,7 +85,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 60
+BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data
@@ -104,6 +107,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
+message += "\nbidirectional=" + str(bidirectional)
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)

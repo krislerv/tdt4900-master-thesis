@@ -4,25 +4,25 @@ import os
 import time
 
 runtime = time.time()
-reddit = "reddit-removed-low-low"
-lastfm = "lastfm-high-high-2"
+reddit = "reddit-removed-high-high"
+lastfm = "lastfm-removed-high-high"
 
 dataset = reddit
 
 create_lastfm_cet = False
 
 create_time_filtered_dataset = False
-time_filter_months = 3 # number of months of data to include per user, unused if create_time_filtered_dataset is False
+time_filter_months = 2 # number of months of data to include per user, unused if create_time_filtered_dataset is False
 
 create_user_statistic_filtered_dataset = True
 if dataset == lastfm:
-    avg_session_length = 7.092  # calculated from avg_session_length() in data_profiler.py (lastfm)
+    avg_session_length = 8.092  # calculated from avg_session_length() in data_profiler.py (lastfm)
     avg_session_count = 645.623  # calculated from avg_session_count() in data_profiler.py (lastfm)
 elif dataset == reddit:
-    avg_session_length = 2.017  # calculated from avg_session_length() in data_profiler.py (reddit)
+    avg_session_length = 3.017  # calculated from avg_session_length() in data_profiler.py (reddit)
     avg_session_count = 62.147  # calculated from avg_session_count() in data_profiler.py (reddit)
-remove_above_avg_session_length = False
-remove_above_avg_session_count = False
+remove_above_avg_session_length = True
+remove_above_avg_session_count = True
 
 home = os.path.expanduser('~')
 
@@ -178,11 +178,14 @@ def filter_timestamps():
 
     save_pickle(new_dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
     
-    dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
-    save_pickle(dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
+    #dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
+    #save_pickle(dataset_list, FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
 
 def map_user_and_artist_id_to_labels():
-    dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
+    if create_time_filtered_dataset:
+        dataset_list = load_pickle(FILTERED_DATASET_W_CONVERTED_TIMESTAMPS)
+    else:
+        dataset_list = load_pickle(DATASET_W_CONVERTED_TIMESTAMPS)
     artist_map = {}
     artist_name_map = {}
     user_map = {}

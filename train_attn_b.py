@@ -16,14 +16,14 @@ from tensorboard import Logger as TensorBoard
 
 # datasets
 reddit = "subreddit"
-lastfm = "lastfm-3-months"
+lastfm = "lastfm-full"
 dataset = lastfm
 
 # GPU settings
 use_cuda = True
-GPU_NO = 0
+GPU_NO = 1
 
-method_inter = "ATTN-G"  # LHS, AVG, ATTN-G, ATTN-L
+method_inter = "LHS"  # LHS, AVG, ATTN-G, ATTN-L
 method_on_the_fly = "ATTN-G"
 use_delta_t_attn = False
 bidirectional = True
@@ -32,7 +32,7 @@ attention_on = "output" # input, output
 # saving/loading of model parameters
 save_model_parameters = True
 resume_model = False
-resume_model_name = "2018-04-29-13-58-49-testing-attn-rnn-subreddit"    # unused if resume_model is False
+resume_model_name = "2018-05-14-15-09-29-testing-attn-rnn-lastfm-full"    # unused if resume_model is False
 
 
 # dataset path
@@ -70,7 +70,7 @@ N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
 N_ITEMS      = -1
-BATCH_SIZE    = 60
+BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
 # Load training data
@@ -84,7 +84,7 @@ message += "DATASET: " + dataset + " MODEL: attn-RNN"
 message += "\nCONFIG: N_ITEMS=" + str(N_ITEMS) + " BATCH_SIZE=" + str(BATCH_SIZE)
 message += "\nINTRA_INTERNAL_SIZE=" + str(INTRA_INTERNAL_SIZE) + " INTER_INTERNAL_SIZE=" + str(INTER_INTERNAL_SIZE)
 message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SIZE)
-message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
+message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed) + " GPU_NO=" + str(GPU_NO)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
 message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn) + " attention_on=" + attention_on
@@ -96,7 +96,7 @@ if use_cuda:
 embed_optimizer = optim.Adam(embed.parameters(), lr=LEARNING_RATE)
 
 # initialize inter RNN
-inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method_inter, use_delta_t_attn, bidirectional, attention_on, gpu_no=GPU_NO)
+inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, method_inter, method_on_the_fly, use_delta_t_attn, bidirectional, attention_on, gpu_no=GPU_NO)
 if use_cuda:
     inter_rnn = inter_rnn.cuda(GPU_NO)
 inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
@@ -157,7 +157,9 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     input_embedding = embed(input)
     input_embedding = F.dropout(input_embedding, DROPOUT_RATE, intra_rnn.training, False)
 
-    all_session_representations = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, (1 + bidirectional) * INTER_INTERNAL_SIZE)).cuda(GPU_NO)
+    all_session_representations = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, (1 + (bidirectional and not method_on_the_fly == "AVG")) * INTER_INTERNAL_SIZE)).cuda(GPU_NO)
+
+    print(all_session_representations.size())
 
     for i in range(input.size(0)):
         user_previous_session_batch = previous_session_batch[i]
