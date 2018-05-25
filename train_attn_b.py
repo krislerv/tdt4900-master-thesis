@@ -2,7 +2,7 @@ import datetime
 import os
 import time
 import numpy as np
-from models_attn_b import InterRNN, IntraRNN, Embed, OnTheFlySessionRepresentations, SessRepEmbed
+from models_attn_b import InterRNN, IntraRNN, Embed, OnTheFlySessionRepresentations
 from datahandler_attn_b import IIRNNDataHandler
 from test_util_h import Tester
 
@@ -17,22 +17,26 @@ from tensorboard import Logger as TensorBoard
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm-full"
-dataset = lastfm
+dataset = reddit
 
 # GPU settings
 use_cuda = True
-GPU_NO = 1
+GPU_NO = 0
 
-method_inter = "LHS"  # LHS, AVG, ATTN-G, ATTN-L
-method_on_the_fly = "ATTN-G"
+method_on_the_fly = "LHS"  # AVG, LHS, ATTN-G, ATTN-L
+method_inter = "LHS"
 use_delta_t_attn = False
-bidirectional = True
+bidirectional = False
 attention_on = "output" # input, output
+
+# logging of attention weights
+log_on_the_fly_attn = False
+log_inter_attn = False
 
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = False
-resume_model_name = "2018-05-14-15-09-29-testing-attn-rnn-lastfm-full"    # unused if resume_model is False
+resume_model = True
+resume_model_name = "2018-05-22-15-21-18-testing-attn-rnn-subreddit"    # unused if resume_model is False
 
 
 # dataset path
@@ -45,12 +49,12 @@ TIME_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%H-%M-%S')
 if resume_model:
     RUN_NAME = resume_model_name
 else:
-    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset
+    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-hierarchical-' + dataset
 LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 0
+seed = 1
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -88,6 +92,7 @@ message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed) + " GPU_NO=" +
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
 message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn) + " attention_on=" + attention_on
+message += "\nbidirectional=" + str(bidirectional)
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -158,8 +163,7 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     input_embedding = F.dropout(input_embedding, DROPOUT_RATE, intra_rnn.training, False)
 
     all_session_representations = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, (1 + (bidirectional and not method_on_the_fly == "AVG")) * INTER_INTERNAL_SIZE)).cuda(GPU_NO)
-
-    print(all_session_representations.size())
+    on_the_fly_attn_weights = Variable(torch.zeros(input.size(0), MAX_SESSION_REPRESENTATIONS, 20))
 
     for i in range(input.size(0)):
         user_previous_session_batch = previous_session_batch[i]
@@ -171,7 +175,7 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
 
         hidden = on_the_fly_sess_reps.init_hidden(MAX_SESSION_REPRESENTATIONS, use_cuda=use_cuda)
 
-        all_session_representations[i] = on_the_fly_sess_reps(hidden, user_previous_session_batch_embedding, user_previous_session_lengths, user_prevoius_session_counts, user_list[i])
+        all_session_representations[i], on_the_fly_attn_weights[i] = on_the_fly_sess_reps(hidden, user_previous_session_batch_embedding, user_previous_session_lengths, user_prevoius_session_counts, user_list[i])
 
     input_timestamps = input_timestamps.unsqueeze(1).expand(input.size(0), MAX_SESSION_REPRESENTATIONS)
     delta_t = input_timestamps - previous_session_timestamps
@@ -180,7 +184,7 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     delta_t_hours = torch.min(delta_t_hours, delta_t_ceiling)
 
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
-    inter_hidden = inter_rnn(all_session_representations, inter_hidden, prevoius_session_counts, user_list, delta_t_hours)
+    inter_hidden, inter_attn_weights = inter_rnn(all_session_representations, inter_hidden, prevoius_session_counts, user_list, delta_t_hours)
 
     # call forward on intra gru layer with hidden state from inter
     intra_hidden = inter_hidden
@@ -205,9 +209,9 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
 
     # return loss and new session representation
     if intra_rnn.training:
-        return loss.data[0], mean_x.data, top_k_predictions
+        return loss.data[0], mean_x.data, top_k_predictions, inter_attn_weights, on_the_fly_attn_weights
     else:
-        return mean_x.data, top_k_predictions
+        return mean_x.data, top_k_predictions, inter_attn_weights, on_the_fly_attn_weights
 
 #CUSTOM CROSS ENTROPY LOSS(Replace as soon as pytorch has implemented an option for non-summed losses)
 #https://github.com/pytorch/pytorch/issues/264
@@ -246,7 +250,15 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
         batch_start_time = time.time()
 
-        batch_loss, sess_rep, top_k_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
+        batch_loss, sess_rep, top_k_predictions, inter_attn_weights, on_the_fly_attn_weights = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
+
+        if log_on_the_fly_attn:
+            datahandler.log_attention_weights_on_the_fly(RUN_NAME, user_list[0], on_the_fly_attn_weights[0], previous_session_batch[0])
+        
+        # log inter attention weights
+        if log_inter_attn:
+            datahandler.log_attention_weights_inter(RUN_NAME, user_list[0], inter_attn_weights, input_timestamps)
+        
         
         datahandler.store_user_session_representations(sess_rep, user_list)
 
@@ -284,7 +296,7 @@ while epoch <= MAX_EPOCHS:
         batch_start_time = time.time()
         _batch_number += 1
 
-        sess_rep, batch_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
+        sess_rep, batch_predictions, inter_attn_weights, on_the_fly_attn_weights = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
 
         datahandler.store_user_session_representations(sess_rep, user_list)
 

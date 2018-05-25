@@ -2,7 +2,7 @@ from tensorboard import Logger as TensorBoard
 
 tensorboard = TensorBoard('./logs')
 
-file = open("testlog manual/2018-05-14-15-09-29-testing-attn-rnn-lastfm-full.txt", "r")
+file = open("testlog manual/2018-05-22-15-21-18-testing-attn-rnn-subreddit.txt", "r")
 
 epoch = 1
 

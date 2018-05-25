@@ -15,17 +15,6 @@ class Embed(nn.Module):
         output = self.embedding_table(input)
         return output
 
-class SessRepEmbed(nn.Module):
-    def __init__(self, input_size, embedding_size):
-        super(SessRepEmbed, self).__init__()
-        self.embedding_table = nn.Embedding(input_size, embedding_size, padding_idx=0)
-        self.embedding_table.weight.data.copy_(torch.zeros(input_size,embedding_size).uniform_(-1,1))
-        self.embedding_table.weight.data[0] = torch.zeros(embedding_size) #ensure that the representation of paddings are tensors of zeros, which then easily can be used in an average rep
-    
-    def forward(self, input):
-        output = self.embedding_table(input)
-        return output
-
 class OnTheFlySessionRepresentations(nn.Module):
     def __init__(self, embedding_size, hidden_size, n_layers, dropout, method, bidirectional, attention_on, gpu_no=0):
         super(OnTheFlySessionRepresentations, self).__init__()
@@ -65,7 +54,7 @@ class OnTheFlySessionRepresentations(nn.Module):
             hidden = hidden.squeeze()
             hidden = self.dropout(hidden)
 
-            return hidden   # [MAX_SESS_REP x EMBEDDING SIZE]
+            return hidden, Variable(torch.zeros(15, 20)).cuda(self.gpu_no)   # [MAX_SESS_REP x EMBEDDING SIZE]
 
         elif self.method == "AVG":
             # padding sessions have length 0, make them length 1 to avoid division by 0 error
@@ -77,7 +66,7 @@ class OnTheFlySessionRepresentations(nn.Module):
             mean_user_previous_session_batch_embedding = user_previous_session_batch_embedding_summed.transpose(0, 1).div(user_previous_session_lengths.float()).transpose(0, 1)
 
 
-            return mean_user_previous_session_batch_embedding   # [MAX_SESS_REP x EMBEDDING SIZE]
+            return mean_user_previous_session_batch_embedding, Variable(torch.zeros(15, 20)).cuda(self.gpu_no) # [MAX_SESS_REP x EMBEDDING SIZE]
 
         elif self.method == "ATTN-G" or self.method == "ATTN-L":
             output, hidden = self.gru(user_previous_session_batch_embedding, hidden)
@@ -110,7 +99,7 @@ class OnTheFlySessionRepresentations(nn.Module):
                 raise Exception("Invalid attention type")
 
             #session_representations = self.dropout(session_representations)
-            return session_representations
+            return session_representations, attn_weights
 
         else:
             raise Exception("Invalid method")
@@ -175,7 +164,7 @@ class InterRNN(nn.Module):
             hidden_out = hidden_out.transpose(0, 1)
             hidden_out = self.dropout2(hidden_out)
 
-            return hidden_out
+            return hidden_out, []
 
         elif self.method == "AVG":
             # users with no previous sessions have session count 0, make them count 1 to avoid division by 0 error
@@ -186,7 +175,7 @@ class InterRNN(nn.Module):
             all_session_representations_summed = all_session_representations.sum(1)
             mean_all_session_representations_summed = all_session_representations_summed.transpose(0, 1).div(previous_session_counts.float()).transpose(0, 1)
 
-            return mean_all_session_representations_summed.unsqueeze(0).contiguous()
+            return mean_all_session_representations_summed.unsqueeze(0).contiguous(), []
 
         elif self.method == "ATTN-G" or self.method == "ATTN-L":
             if self.use_delta_t_attn:
@@ -231,7 +220,7 @@ class InterRNN(nn.Module):
 
             user_representations = self.dropout2(user_representations)
 
-            return user_representations.transpose(0, 1)
+            return user_representations.transpose(0, 1), attn_weights
 
         else:
             raise Exception("Invalid method")

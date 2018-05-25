@@ -267,9 +267,9 @@ class IIRNNDataHandler:
                 self.user_session_representations_timestamp_bucket_ids[user].append(session_timestamp_bucket_id)
                 self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
 
-    def log_attention_weights_inter(self, use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_id, inter_attn_weights, input_timestamps, dataset):
+    def log_attention_weights_inter(self, run_name, user_id, inter_attn_weights, input_timestamps, dataset):
         try:
-            file = open("inter_attn_weights-" + dataset + "-" + str(use_hidden_state_attn) + '-' + str(use_delta_t_attn) + '-' + str(use_week_time_attn) + ".txt", "a", encoding="utf-8")
+            file = open("attn_weights/inter_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
 
             last_sessions_for_user = self.get_last_sessions_for_user(user_id)
             for i in range(15):
@@ -290,7 +290,7 @@ class IIRNNDataHandler:
     def log_attention_weights_intra(self, intra_attn_weights, run_name, sl, top_k_predictions, user_id, user_index):
         try:
             intra_attn_weights = intra_attn_weights.transpose(1, 2)
-            file = open("intra_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
+            file = open("attn_weights/intra_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
             session_length = sl[user_index]
 
             file.write(str(user_id))

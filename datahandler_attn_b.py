@@ -296,3 +296,47 @@ class IIRNNDataHandler:
                     self.user_session_representations[user].pop() #pop the sucker
                 self.user_session_representations[user].append(session_representation)
                 self.num_user_session_representations[user] = min(self.MAX_SESSION_REPRESENTATIONS, num_reps+1)
+
+
+    def log_attention_weights_inter(self, run_name, user_id, inter_attn_weights, input_timestamps):
+        try:
+            file = open("attn_weights/inter_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
+
+            last_sessions_for_user = self.get_last_sessions_for_user(user_id)
+            #print(last_sessions_for_user)
+            for i in range(15):
+                file.write(str(inter_attn_weights[0][i].data[0]) + ",")
+            file.write("\n\n")
+            file.write(str(input_timestamps[0]))
+            file.write("\n\n")
+            for session_id in range(len(last_sessions_for_user)):
+                file.write(str(last_sessions_for_user[session_id][0][0]) + "\n")
+                for event_id in range(len(last_sessions_for_user[session_id])):
+                    file.write(str(last_sessions_for_user[session_id][event_id][1]) + ",")
+                file.write("\n")
+            file.write("\n\n\n\n\n\n")
+            file.close()
+        except:
+            pass
+
+    def log_attention_weights_on_the_fly(self, run_name, user_id, on_the_fly_attn_weights, previous_session_batch):
+        try:
+            file = open("attn_weights/on_the_fly_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
+            #print(user_id)
+            #print(on_the_fly_attn_weights)
+            #print(previous_session_batch)
+            print("------")
+            for i in range(len(previous_session_batch)):
+                prev_session = previous_session_batch[i]
+                if prev_session[0] == 0:
+                    break # no more real sessions
+                for j in range(len(prev_session)):
+                    file.write(str(prev_session[j]) + ",")
+                file.write("\n")
+                for j in range(len(prev_session)):
+                    print(on_the_fly_attn_weights[i][j].data[0])
+                    file.write(str(on_the_fly_attn_weights[i][j].data[0]) + ",")
+                file.write("\n\n\n\n")
+                file.close()
+        except:
+            pass

@@ -25,11 +25,11 @@ if dataset == lastfm:
 else:
     use_last_hidden_state = True
 
-bidirectional = True
+bidirectional = False
 
 # Inter-session attention mechanisms
-use_hidden_state_attn = False
-use_delta_t_attn = True
+use_hidden_state_attn = True
+use_delta_t_attn = False
 use_week_time_attn = False
 
 # Intra-session attention mechanisms
@@ -44,14 +44,14 @@ log_intra_attn = False
 # saving/loading of model parameters
 save_model_parameters = True
 resume_model = True
-resume_model_name = "2018-05-12-10-21-24-testing-attn-rnn-subreddit-False-False"    # unused if resume_model is False
+resume_model_name = "2018-05-24-16-21-13-testing-attn-rnn-subreddit-False-False"    # unused if resume_model is False
 
 # GPU settings
 use_cuda = True
 GPU_NO = 0
 
 # dataset path
-HOME = os.path.expanduser('~')
+HOME = ".."
 DATASET_PATH = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
 
 # logging of testing results
@@ -65,7 +65,7 @@ LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 0
+seed = 1
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -74,7 +74,7 @@ if dataset == reddit:
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
     DROPOUT_RATE = 0.0
-    MAX_EPOCHS = 31
+    MAX_EPOCHS = 50
 elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
@@ -107,7 +107,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
-message += "\nbidirectional=" + str(bidirectional)
+message += "\nbidirectional=" + str(bidirectional) + " SEED=" + str(seed)
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -292,8 +292,14 @@ while epoch <= MAX_EPOCHS:
         batch_loss, sess_rep, inter_attn_weights, intra_attn_weights, top_k_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list)
 
         # log inter attention weights
-        if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and _batch_number % 100 == 0 and inter_session_seq_length[0] == 15:
-            datahandler.log_attention_weights_inter(use_hidden_state_attn, use_delta_t_attn, use_week_time_attn, user_list[0], inter_attn_weights, input_timestamps, dataset)
+        if log_inter_attn and (use_hidden_state_attn + use_delta_t_attn + use_week_time_attn > 0) and inter_session_seq_length[0] == 15:
+            datahandler.log_attention_weights_inter(RUN_NAME, user_list[0], inter_attn_weights, input_timestamps, dataset)
+
+        # log intra attention weights
+        if log_intra_attn and use_intra_attn and _batch_number % 25 == 0:
+            for i in range(len(user_list)):
+                if inter_session_seq_length[i] == 15 and sl[i] > 5:
+                    datahandler.log_attention_weights_intra(intra_attn_weights, RUN_NAME, sl, top_k_predictions, user_list[i], i)
 
         
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
@@ -333,12 +339,6 @@ while epoch <= MAX_EPOCHS:
         _batch_number += 1
 
         sess_rep, inter_attn_weights, intra_attn_weights, batch_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list)
-
-        # log intra attention weights
-        if log_intra_attn and use_intra_attn and _batch_number % 3 == 0:
-            for i in range(len(user_list)):
-                if inter_session_seq_length[i] == 15 and sl[i] > 5:
-                    datahandler.log_attention_weights_intra(intra_attn_weights, RUN_NAME, sl, batch_predictions, user_list[i], i)
 
         datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
 
