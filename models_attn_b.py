@@ -41,8 +41,8 @@ class OnTheFlySessionRepresentations(nn.Module):
         self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
         if method == "ATTN-L":
-            self.user_attention = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size) for i in range(1000)])
-            self.user_scale = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False) for i in range(1000)])
+            self.user_attention = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size) for i in range(3000)])
+            self.user_scale = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False) for i in range(3000)])
 
     def forward(self, hidden, user_previous_session_batch_embedding, user_previous_session_lengths, user_prevoius_session_counts, user_id):
         if self.method == "LHS":
@@ -126,12 +126,12 @@ class InterRNN(nn.Module):
         self.bidirectional = bidirectional
         self.attention_on = attention_on
 
-        self.gru = nn.GRU((1 + ((self.bidirectional and not on_the_fly_method == "AVG") or self.use_delta_t_attn)) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
+        self.gru = nn.GRU((1 + ((self.bidirectional and not on_the_fly_method == "AVG"))) * embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
 
-        self.attention = nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size)
-        self.scale = nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False)
+        self.attention = nn.Linear((1 + (bidirectional or use_delta_t_attn)) * hidden_size, (1 + (bidirectional or use_delta_t_attn)) * hidden_size)
+        self.scale = nn.Linear((1 + (bidirectional or use_delta_t_attn)) * hidden_size, 1, bias=False)
 
         self.index_list = []
         for i in range(self.max_session_representations):
@@ -139,11 +139,10 @@ class InterRNN(nn.Module):
         self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
         if method == "ATTN-L":
-            self.user_attention = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, (1 + bidirectional) * hidden_size) for i in range(1000)])
-            self.user_scale = nn.ModuleList([nn.Linear((1 + bidirectional) * hidden_size, 1, bias=False) for i in range(1000)])
+            self.user_attention = nn.ModuleList([nn.Linear((1 + (bidirectional or use_delta_t_attn)) * hidden_size, (1 + (bidirectional or use_delta_t_attn)) * hidden_size) for i in range(3000)])
+            self.user_scale = nn.ModuleList([nn.Linear((1 + (bidirectional or use_delta_t_attn)) * hidden_size, 1, bias=False) for i in range(3000)])
 
         if use_delta_t_attn:
-            self.delta_gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True)
             self.delta_embedding = nn.Embedding(169, embedding_size)
             self.delta_embedding.weight.data.copy_(torch.zeros(169, embedding_size).uniform_(-1, 1))
 
@@ -178,34 +177,35 @@ class InterRNN(nn.Module):
             return mean_all_session_representations_summed.unsqueeze(0).contiguous(), []
 
         elif self.method == "ATTN-G" or self.method == "ATTN-L":
-            if self.use_delta_t_attn:
-                delta_t_hours = self.delta_embedding(delta_t_hours)
-                delta_t_hours = self.dropout1(delta_t_hours)
-                all_session_representations = self.dropout1(all_session_representations)
-                concatenated_input = torch.cat((delta_t_hours, all_session_representations), dim=2)
-                output, _ = self.gru(concatenated_input, hidden)
-            else:
-                all_session_representations = self.dropout1(all_session_representations)
-                output, _ = self.gru(all_session_representations, hidden)
+            all_session_representations = self.dropout1(all_session_representations)
+            output, _ = self.gru(all_session_representations, hidden)
             # create a mask so that attention weights for "empty" outputs are zero
             previous_session_counts_expanded = previous_session_counts.unsqueeze(1).expand(output.size(0), output.size(1))     # [BATCH_SIZE, MAX_SESS_REP]
             indexes = self.index_list.unsqueeze(0).expand(output.size(0), output.size(1))                                      # [BATCH_SIZE, MAX_SESS_REP]
             mask = torch.lt(indexes, previous_session_counts_expanded) # [BATCH_SIZE, MAX_SESS_REP]  i-th element in each batch is 1 if it is a real sess rep, 0 otherwise
-            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2)).float()# * 1000000 - 1000000   # 1 -> 0, 0 -> -1000000    [BATCH_SIZE, MAX_SESS_REP, HIDDEN_SIZE]
+            mask = mask.unsqueeze(2).expand(output.size(0), output.size(1), output.size(2) * (1 + self.use_delta_t_attn)).float() # [BATCH_SIZE, MAX_SESS_REP, HIDDEN_SIZE]
 
-            # apply mask
-            output = output * mask
+
+            if self.use_delta_t_attn:
+                delta_t_hours = self.delta_embedding(delta_t_hours)
+                attention_input = torch.cat((output, delta_t_hours), 2)
+                attention_input = attention_input * mask
+            else:
+                # apply mask
+                output = output * mask
+                attention_input = output
+
 
             # compute attention weights
             if self.method == "ATTN-G":
-                attn_energies = torch.tanh(self.attention(output))
+                attn_energies = torch.tanh(self.attention(attention_input))
                 attn_energies = self.scale(attn_energies)
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)
             else:
                 attn_energies = Variable(torch.zeros(all_session_representations.size(0), all_session_representations.size(1), 1)).cuda(self.gpu_no)
                 for i in range(len(user_list)):
                     user_id = user_list[i]
-                    user_attn_energies = torch.tanh(self.user_attention[user_id](output[i]))
+                    user_attn_energies = torch.tanh(self.user_attention[user_id](attention_input[i]))
                     user_attn_energies = self.user_scale[user_id](user_attn_energies)
                     attn_energies[i] = user_attn_energies
                 attn_weights = F.softmax(attn_energies.squeeze(), dim=1)

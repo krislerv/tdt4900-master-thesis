@@ -14,8 +14,10 @@ from torch.autograd import Variable
 
 from tensorboard import Logger as TensorBoard
 
+import gpustat
+
 # datasets
-reddit = "subreddit"
+reddit = "reddit-removed-low-low"
 lastfm = "lastfm-full"
 dataset = reddit
 
@@ -28,27 +30,40 @@ else:
 bidirectional = False
 
 # Inter-session attention mechanisms
-use_hidden_state_attn = True
+use_hidden_state_attn = False
 use_delta_t_attn = False
 use_week_time_attn = False
 
+use_per_user_inter_attn = False
+
 # Intra-session attention mechanisms
-use_intra_attn = False
+use_intra_attn = True
 intra_attn_method = "cat"   # options: cat, sum
-use_per_user_intra_attn = False # not used if use_intra_attn is False
+use_per_user_intra_attn = True # not used if use_intra_attn is False
 
 # logging of attention weights
 log_inter_attn = False
 log_intra_attn = False
 
+skip_early_testing = True
+
 # saving/loading of model parameters
 save_model_parameters = True
 resume_model = True
-resume_model_name = "2018-05-24-16-21-13-testing-attn-rnn-subreddit-False-False"    # unused if resume_model is False
+resume_model_name = "2018-06-06-21-47-36-testing-attn-rnn-reddit-removed-low-low-True-True"    # unused if resume_model is False
+
+if resume_model:
+    skip_early_testing = False
+
 
 # GPU settings
 use_cuda = True
-GPU_NO = 0
+GPU_NO = 0  # Dont touch! change CUDA_VISIBLE_DEVICES INSTEAD
+
+CUDA_VISIBLE_DEVICES = "1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
+
+PID = str(os.getpid())
 
 # dataset path
 HOME = ".."
@@ -65,7 +80,7 @@ LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 1
+seed = 0
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -74,13 +89,13 @@ if dataset == reddit:
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
     DROPOUT_RATE = 0.0
-    MAX_EPOCHS = 50
+    MAX_EPOCHS = 30
 elif dataset == lastfm:
     INTRA_INTERNAL_SIZE = 100
     INTER_INTERNAL_SIZE = INTRA_INTERNAL_SIZE
     LEARNING_RATE = 0.001
     DROPOUT_RATE = 0.2
-    MAX_EPOCHS = 50
+    MAX_EPOCHS = 25
 N_LAYERS     = 1
 EMBEDDING_SIZE = INTRA_INTERNAL_SIZE
 TOP_K = 20
@@ -88,10 +103,17 @@ N_ITEMS      = -1
 BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
+def show_memusage(device=1):
+    gpu_stats = gpustat.GPUStatCollection.new_query()
+    item = gpu_stats.jsonify()["gpus"][device]
+    print("{}/{}".format(item["memory.used"] - 10855, item["memory.total"]))
+
 # Load training data
 datahandler = IIRNNDataHandler(DATASET_PATH, BATCH_SIZE, LOG_FILE, MAX_SESSION_REPRESENTATIONS, INTER_INTERNAL_SIZE)
 N_ITEMS = datahandler.get_num_items()
 N_SESSIONS = datahandler.get_num_training_sessions()
+
+show_memusage()
 
 message = "------------------------------------------------------------------------\n"
 if use_last_hidden_state:
@@ -99,7 +121,7 @@ if use_last_hidden_state:
 else:
     message += dataset + " with average of embeddings\n"
 message += "DATASET: " + dataset + " MODEL: attn-RNN"
-message += "\nuse_hidden_state_attn=" + str(use_hidden_state_attn) + " use_delta_t_attn=" + str(use_delta_t_attn) + " use_week_time_attn=" + str(use_week_time_attn)
+message += "\nuse_hidden_state_attn=" + str(use_hidden_state_attn) + " use_delta_t_attn=" + str(use_delta_t_attn) + " use_week_time_attn=" + str(use_week_time_attn) + " use_per_user_inter_attn=" + str(use_per_user_inter_attn)
 message += "\nuse_intra_attn=" + str(use_intra_attn) + " intra_attn_method=" + intra_attn_method + " use_per_user_intra_attn=" + str(use_per_user_intra_attn)
 message += "\nCONFIG: N_ITEMS=" + str(N_ITEMS) + " BATCH_SIZE=" + str(BATCH_SIZE)
 message += "\nINTRA_INTERNAL_SIZE=" + str(INTRA_INTERNAL_SIZE) + " INTER_INTERNAL_SIZE=" + str(INTER_INTERNAL_SIZE)
@@ -107,7 +129,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
-message += "\nbidirectional=" + str(bidirectional) + " SEED=" + str(seed)
+message += "\nbidirectional=" + str(bidirectional) + " SEED=" + str(seed) + " PID=" + PID + " GPU_NO=" + str(GPU_NO) + " (" + CUDA_VISIBLE_DEVICES + ")"
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
@@ -116,7 +138,7 @@ if use_cuda:
 embed_optimizer = optim.Adam(embed.parameters(), lr=LEARNING_RATE)
 
 # initialize inter RNN
-inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, bidirectional, use_hidden_state_attn=use_hidden_state_attn, use_delta_t_attn=use_delta_t_attn, use_week_time_attn=use_week_time_attn, gpu_no=GPU_NO)
+inter_rnn = InterRNN(EMBEDDING_SIZE, INTER_INTERNAL_SIZE, N_LAYERS, DROPOUT_RATE, MAX_SESSION_REPRESENTATIONS, bidirectional, use_hidden_state_attn=use_hidden_state_attn, use_delta_t_attn=use_delta_t_attn, use_week_time_attn=use_week_time_attn, per_user_attn_weights=use_per_user_inter_attn, gpu_no=GPU_NO)
 if use_cuda:
     inter_rnn = inter_rnn.cuda(GPU_NO)
 inter_optimizer = optim.Adam(inter_rnn.parameters(), lr=LEARNING_RATE)
@@ -132,7 +154,7 @@ if resume_model:
     embed_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-embed_optimizer.pth"))
     inter_rnn.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter_model.pth"))
     inter_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-inter_optimizer.pth"))
-    intra_rnn.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-intra_model.pth"))
+    #intra_rnn.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-intra_model.pth"))
     intra_optimizer.load_state_dict(torch.load(HOME + "/savestates/" + RUN_NAME + "-intra_optimizer.pth"))
 
 def run(input, target, session_lengths, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list):
@@ -178,7 +200,7 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     std_delta_t_hours = delta_t_hours.float().std(dim=1)
 
     inter_hidden = inter_rnn.init_hidden(session_reps.size(0), use_cuda)
-    inter_output, inter_hidden, inter_attn_weights = inter_rnn(session_reps, inter_hidden, inter_session_seq_length, delta_t_hours, sess_rep_timestamp_bucket_ids_batch)
+    inter_output, inter_hidden, inter_attn_weights = inter_rnn(session_reps, inter_hidden, inter_session_seq_length, delta_t_hours, sess_rep_timestamp_bucket_ids_batch, user_list)
 
     # call forward on intra gru layer with hidden state from inter
     intra_hidden = inter_hidden
@@ -278,6 +300,9 @@ while epoch <= MAX_EPOCHS:
     print("Starting epoch #" + str(epoch))
     epoch_loss = 0
 
+    if epoch == 1:
+        datahandler.log_config(message)
+
     datahandler.reset_user_batch_data()
     datahandler.reset_user_session_representations()
     _batch_number = 0
@@ -307,7 +332,7 @@ while epoch <= MAX_EPOCHS:
         epoch_loss += batch_loss
         if _batch_number % 100 == 0:
             batch_runtime = time.time() - batch_start_time
-            print("Batch number:", str(_batch_number), "/", str(num_training_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
+            print("PID:", PID, "\t Batch number:", str(_batch_number), "/", str(num_training_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
             print("\t Batch loss:", "%.3f" % batch_loss, end='')
             eta = (batch_runtime * (num_training_batches - _batch_number)) / 60
             eta = "%.2f" % eta
@@ -322,54 +347,54 @@ while epoch <= MAX_EPOCHS:
 
     print("Epoch", epoch, "finished")
     print("|- Epoch loss:", epoch_loss)
+
+    if (dataset == lastfm and epoch >= 10) or (dataset == reddit and epoch >= 7) or not skip_early_testing:
     
-    ##
-    ##  TESTING
-    ##
-    print("Starting testing")
-    tester = Tester()
-    datahandler.reset_user_batch_data()
-    _batch_number = 0
-    xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_test_batch()
-    intra_rnn.eval()
-    inter_rnn.eval()
-    embed.eval()
-    while len(xinput) > int(BATCH_SIZE / 2):
-        batch_start_time = time.time()
-        _batch_number += 1
-
-        sess_rep, inter_attn_weights, intra_attn_weights, batch_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list)
-
-        datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
-
-        # Evaluate predictions
-        tester.evaluate_batch(batch_predictions, targetvalues, sl)
-
-        # Print some stats during testing
-        if _batch_number % 100 == 0:
-            batch_runtime = time.time() - batch_start_time
-            print("Batch number:", str(_batch_number), "/", str(num_test_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
-            eta = (batch_runtime*(num_test_batches-_batch_number)) / 60
-            eta = "%.2f" % eta
-            print("\t ETA:", eta, "minutes.")
-        
+        ##
+        ##  TESTING
+        ##
+        print("Starting testing")
+        tester = Tester()
+        datahandler.reset_user_batch_data()
+        _batch_number = 0
         xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_test_batch()
+        intra_rnn.eval()
+        inter_rnn.eval()
+        embed.eval()
+        while len(xinput) > int(BATCH_SIZE / 2):
+            batch_start_time = time.time()
+            _batch_number += 1
 
-    # Print final test stats for epoch
-    test_stats, current_recall5, current_recall10, current_recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()
-    print("Recall@5 = " + str(current_recall5))
-    print("Recall@20 = " + str(current_recall20))
-    print(test_stats)
-    if epoch == 1:
-        datahandler.log_config(message)
-    datahandler.log_test_stats(epoch, epoch_loss, test_stats)
-    tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
-    tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
-    tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
-    tensorboard.scalar_summary('MRR@5', mrr5, epoch)
-    tensorboard.scalar_summary('MRR@10', mrr10, epoch)
-    tensorboard.scalar_summary('MRR@20', mrr20, epoch)
-    tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
+            sess_rep, inter_attn_weights, intra_attn_weights, batch_predictions = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, input_timestamps, input_timestamp_bucket_ids, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list)
+
+            datahandler.store_user_session_representations(sess_rep, user_list, input_timestamps, input_timestamp_bucket_ids)
+
+            # Evaluate predictions
+            tester.evaluate_batch(batch_predictions, targetvalues, sl)
+
+            # Print some stats during testing
+            if _batch_number % 100 == 0:
+                batch_runtime = time.time() - batch_start_time
+                print("PID:", PID, "\t Batch number:", str(_batch_number), "/", str(num_test_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
+                eta = (batch_runtime*(num_test_batches-_batch_number)) / 60
+                eta = "%.2f" % eta
+                print("\t ETA:", eta, "minutes.")
+            
+            xinput, targetvalues, sl, input_timestamps, input_timestamp_bucket_ids, session_reps, inter_session_seq_length, sess_rep_timestamps_batch, sess_rep_timestamp_bucket_ids_batch, user_list = datahandler.get_next_test_batch()
+
+        # Print final test stats for epoch
+        test_stats, current_recall5, current_recall10, current_recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()
+        print("Recall@5 = " + str(current_recall5))
+        print("Recall@20 = " + str(current_recall20))
+        print(test_stats)
+        datahandler.log_test_stats(epoch, epoch_loss, test_stats)
+        tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
+        tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
+        tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
+        tensorboard.scalar_summary('MRR@5', mrr5, epoch)
+        tensorboard.scalar_summary('MRR@10', mrr10, epoch)
+        tensorboard.scalar_summary('MRR@20', mrr20, epoch)
+        tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
 
     epoch += 1
 

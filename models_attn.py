@@ -16,7 +16,7 @@ class Embed(nn.Module):
         return output
 
 class InterRNN(nn.Module):
-    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, bidirectional, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False, gpu_no=0):
+    def __init__(self, embedding_size, hidden_size, n_layers, dropout, max_session_representations, bidirectional, use_hidden_state_attn=False, use_delta_t_attn=False, use_week_time_attn=False, per_user_attn_weights=False, gpu_no=0):
         super(InterRNN, self).__init__()
 
         self.hidden_size = hidden_size
@@ -30,6 +30,8 @@ class InterRNN(nn.Module):
         self.use_hidden_state_attn = use_hidden_state_attn
         self.use_delta_t_attn = use_delta_t_attn
         self.use_week_time_attn = use_week_time_attn
+
+        self.per_user_attn_weights = per_user_attn_weights
 
         self.gru = nn.GRU(embedding_size, hidden_size, n_layers, batch_first=True, bidirectional=bidirectional)
         self.dropout = nn.Dropout(dropout)
@@ -46,15 +48,18 @@ class InterRNN(nn.Module):
 
         if self.num_types_attn:  # if at least one type of attention
             self.attention = nn.Linear(self.hidden_size * (self.num_types_attn + (self.use_hidden_state_attn and self.bidirectional)), self.hidden_size)
-            self.c = nn.Parameter(torch.FloatTensor(1, hidden_size))
-            self.c.data.copy_(torch.zeros(1, hidden_size).uniform_(-1, 1))
+            self.scale = nn.Linear(self.hidden_size, 1, bias=False)
+
+            if self.per_user_attn_weights:
+                self.attention_params = nn.ModuleList([nn.Linear(self.hidden_size * (self.num_types_attn + (self.use_hidden_state_attn and self.bidirectional)), self.hidden_size) for i in range(3000)])
+                self.scale_params = nn.ModuleList([nn.Linear(self.hidden_size, 1, bias=False) for i in range(3000)])
 
             self.index_list = []
             for i in range(max_session_representations):
                 self.index_list.append(i)
             self.index_list = Variable(torch.LongTensor(self.index_list)).cuda(self.gpu_no)
 
-    def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps):
+    def forward(self, input, hidden, inter_session_seq_length, delta_t_h, timestamps, user_list):
         # gets the output of the last non-zero session representation
         input = self.dropout(input)
         output, _ = self.gru(input, hidden)
@@ -97,9 +102,17 @@ class InterRNN(nn.Module):
 
         concatenated_attention = concatenated_attention * mask
 
-        attention_energies = torch.tanh(self.attention(concatenated_attention))
-        attention_energies = attention_energies.transpose(1, 2)
-        attention_energies = torch.bmm(self.c.expand(input.size(0), 1, self.hidden_size), attention_energies)
+        if self.per_user_attn_weights:
+            attention_energies = Variable(torch.zeros(input.size(0), input.size(1), 1)).cuda(self.gpu_no)
+            for i in range(len(user_list)):
+                user_id = user_list[i].data[0]
+                user_attn_energies = torch.tanh(self.attention_params[user_id](concatenated_attention[i]))
+                user_attn_energies = self.scale_params[user_id](user_attn_energies)
+                attention_energies[i] = user_attn_energies
+        else:
+            attention_energies = torch.tanh(self.attention(concatenated_attention))
+            attention_energies = self.scale(attention_energies)
+
         inter_output_attn_weights = F.softmax(attention_energies.squeeze())
         new_hidden = torch.bmm(inter_output_attn_weights.unsqueeze(1), output)
         new_hidden = new_hidden.transpose(0, 1)
@@ -142,10 +155,10 @@ class IntraRNN(nn.Module):
             self.cat_attention = nn.Linear((1 + self.bidirectional) * 2 * hidden_size, hidden_size)
 
             if use_per_user_intra_attn:
-                self.inter_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * hidden_size, hidden_size) for i in range(1000)])
-                self.hidden_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * hidden_size, hidden_size) for i in range(1000)])
-                self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(1000)])
-                self.cat_attention_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * 2 * hidden_size, hidden_size) for i in range(1000)])
+                #self.inter_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * hidden_size, hidden_size) for i in range(3000)])
+                #self.hidden_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * hidden_size, hidden_size) for i in range(3000)])
+                self.scale_params = nn.ModuleList([nn.Linear(hidden_size, 1) for i in range(3000)])
+                self.cat_attention_params = nn.ModuleList([nn.Linear((1 + self.bidirectional) * 2 * hidden_size, hidden_size) for i in range(3000)])
 
         if self.bidirectional:
             self.gru_scale = nn.Linear(2 * self.hidden_size, self.hidden_size)

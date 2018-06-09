@@ -14,6 +14,8 @@ from torch.autograd import Variable
 
 from tensorboard import Logger as TensorBoard
 
+import gpustat
+
 # datasets
 reddit = "subreddit"
 lastfm = "lastfm-full"
@@ -21,10 +23,16 @@ dataset = reddit
 
 # GPU settings
 use_cuda = True
-GPU_NO = 0
+GPU_NO = 0  # Dont touch! change CUDA_VISIBLE_DEVICES instead
 
-method_on_the_fly = "LHS"  # AVG, LHS, ATTN-G, ATTN-L
-method_inter = "LHS"
+CUDA_VISIBLE_DEVICES = "1"
+
+os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
+
+PID = str(os.getpid())
+
+method_on_the_fly = "ATTN-G"  # AVG, LHS, ATTN-G, ATTN-L
+method_inter = "ATTN-G"
 use_delta_t_attn = False
 bidirectional = False
 attention_on = "output" # input, output
@@ -33,14 +41,19 @@ attention_on = "output" # input, output
 log_on_the_fly_attn = False
 log_inter_attn = False
 
+skip_early_testing = True
+
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = True
-resume_model_name = "2018-05-22-15-21-18-testing-attn-rnn-subreddit"    # unused if resume_model is False
+resume_model = False
+resume_model_name = "2018-06-09-00-33-54-hierarchical-subreddit"    # unused if resume_model is False
+
+if resume_model:
+    skip_early_testing = False
 
 
 # dataset path
-HOME = os.path.expanduser('~')
+HOME = ".."
 DATASET_PATH = HOME + '/datasets/' + dataset + '/4_train_test_split.pickle'
 
 # logging of testing results
@@ -54,7 +67,7 @@ LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
 # set seed
-seed = 1
+seed = 0
 torch.manual_seed(seed)
 
 # RNN configuration
@@ -88,12 +101,19 @@ message += "DATASET: " + dataset + " MODEL: attn-RNN"
 message += "\nCONFIG: N_ITEMS=" + str(N_ITEMS) + " BATCH_SIZE=" + str(BATCH_SIZE)
 message += "\nINTRA_INTERNAL_SIZE=" + str(INTRA_INTERNAL_SIZE) + " INTER_INTERNAL_SIZE=" + str(INTER_INTERNAL_SIZE)
 message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SIZE)
-message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed) + " GPU_NO=" + str(GPU_NO)
+message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed) + " GPU_NO=" + str(GPU_NO) + " (" + CUDA_VISIBLE_DEVICES + ")" + " PID=" + PID
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
 message += "\nmethod_inter=" + method_inter + " method_on_the_fly=" + method_on_the_fly + " use_delta_t_attn=" + str(use_delta_t_attn) + " attention_on=" + attention_on
 message += "\nbidirectional=" + str(bidirectional)
+if resume_model:
+    message += "\nresume_model: " + resume_model_name
 print(message)
+
+def show_memusage(device=0):
+    gpu_stats = gpustat.GPUStatCollection.new_query()
+    item = gpu_stats.jsonify()["gpus"][device]
+    print("{}/{}".format(item["memory.used"], item["memory.total"]))
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
 if use_cuda:
@@ -238,6 +258,9 @@ while epoch <= MAX_EPOCHS:
     print("Starting epoch #" + str(epoch))
     epoch_loss = 0
 
+    if epoch == 1:
+        datahandler.log_config(message)
+
     datahandler.reset_user_batch_data()
     datahandler.reset_user_session_representations()
     _batch_number = 0
@@ -265,7 +288,7 @@ while epoch <= MAX_EPOCHS:
         epoch_loss += batch_loss
         if _batch_number % 100 == 0:
             batch_runtime = time.time() - batch_start_time
-            print("Batch number:", str(_batch_number), "/", str(num_training_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
+            print("PID:", PID, "\t Batch number:", str(_batch_number), "/", str(num_training_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
             print("\t Batch loss:", "%.3f" % batch_loss, end='')
             eta = (batch_runtime * (num_training_batches - _batch_number)) / 60
             eta = "%.2f" % eta
@@ -279,55 +302,57 @@ while epoch <= MAX_EPOCHS:
 
     print("Epoch", epoch, "finished")
     print("|- Epoch loss:", epoch_loss)
+
+    if (dataset == lastfm and epoch >= 10) or (dataset == reddit and epoch >= 4) or not skip_early_testing:
     
-    ##
-    ##  TESTING
-    ##
-    print("Starting testing")
-    tester = Tester()
-    datahandler.reset_user_batch_data()
-    _batch_number = 0
-    xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps = datahandler.get_next_test_batch()
-    intra_rnn.eval()
-    inter_rnn.eval()
-    embed.eval()
-    on_the_fly_sess_reps.eval()
-    while len(xinput) > int(BATCH_SIZE / 2):
-        batch_start_time = time.time()
-        _batch_number += 1
-
-        sess_rep, batch_predictions, inter_attn_weights, on_the_fly_attn_weights = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
-
-        datahandler.store_user_session_representations(sess_rep, user_list)
-
-        # Evaluate predictions
-        tester.evaluate_batch(batch_predictions, targetvalues, sl)
-
-        # Print some stats during testing
-        if _batch_number % 100 == 0:
-            batch_runtime = time.time() - batch_start_time
-            print("Batch number:", str(_batch_number), "/", str(num_test_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
-            eta = (batch_runtime*(num_test_batches-_batch_number)) / 60
-            eta = "%.2f" % eta
-            print("\t ETA:", eta, "minutes.")
-        
+        ##
+        ##  TESTING
+        ##
+        print("Starting testing")
+        tester = Tester()
+        datahandler.reset_user_batch_data()
+        _batch_number = 0
         xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps = datahandler.get_next_test_batch()
+        intra_rnn.eval()
+        inter_rnn.eval()
+        embed.eval()
+        on_the_fly_sess_reps.eval()
+        while len(xinput) > int(BATCH_SIZE / 2):
+            batch_start_time = time.time()
+            _batch_number += 1
 
-    # Print final test stats for epoch
-    test_stats, current_recall5, current_recall10, current_recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()
-    print("Recall@5 = " + str(current_recall5))
-    print("Recall@20 = " + str(current_recall20))
-    print(test_stats)
-    if epoch == 1:
-        datahandler.log_config(message)
-    datahandler.log_test_stats(epoch, epoch_loss, test_stats)
-    tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
-    tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
-    tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
-    tensorboard.scalar_summary('MRR@5', mrr5, epoch)
-    tensorboard.scalar_summary('MRR@10', mrr10, epoch)
-    tensorboard.scalar_summary('MRR@20', mrr20, epoch)
-    tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
+            sess_rep, batch_predictions, inter_attn_weights, on_the_fly_attn_weights = run(xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps)
+
+            datahandler.store_user_session_representations(sess_rep, user_list)
+
+            # Evaluate predictions
+            tester.evaluate_batch(batch_predictions, targetvalues, sl)
+
+            # Print some stats during testing
+            if _batch_number % 100 == 0:
+                batch_runtime = time.time() - batch_start_time
+                print("PID:", PID, "\t Batch number:", str(_batch_number), "/", str(num_test_batches), "\t Batch time:", "%.4f" % batch_runtime, "minutes", end='')
+                eta = (batch_runtime*(num_test_batches-_batch_number)) / 60
+                eta = "%.2f" % eta
+                print("\t ETA:", eta, "minutes.")
+            
+            xinput, targetvalues, sl, session_reps, inter_session_seq_length, user_list, previous_session_batch, previous_session_lengths, prevoius_session_counts, input_timestamps, previous_session_timestamps = datahandler.get_next_test_batch()
+
+        # Print final test stats for epoch
+        test_stats, current_recall5, current_recall10, current_recall20, mrr5, mrr10, mrr20 = tester.get_stats_and_reset()
+        print("Recall@5 = " + str(current_recall5))
+        print("Recall@20 = " + str(current_recall20))
+        print(test_stats)
+        if epoch == 1:
+            datahandler.log_config(message)
+        datahandler.log_test_stats(epoch, epoch_loss, test_stats)
+        tensorboard.scalar_summary('Recall@5', current_recall5, epoch)
+        tensorboard.scalar_summary('Recall@10', current_recall10, epoch)
+        tensorboard.scalar_summary('Recall@20', current_recall20, epoch)
+        tensorboard.scalar_summary('MRR@5', mrr5, epoch)
+        tensorboard.scalar_summary('MRR@10', mrr10, epoch)
+        tensorboard.scalar_summary('MRR@20', mrr20, epoch)
+        tensorboard.scalar_summary('epoch_loss', epoch_loss, epoch)
 
     epoch += 1
 

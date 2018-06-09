@@ -322,10 +322,6 @@ class IIRNNDataHandler:
     def log_attention_weights_on_the_fly(self, run_name, user_id, on_the_fly_attn_weights, previous_session_batch):
         try:
             file = open("attn_weights/on_the_fly_attn_weights-" + run_name + ".txt", "a", encoding="utf-8")
-            #print(user_id)
-            #print(on_the_fly_attn_weights)
-            #print(previous_session_batch)
-            print("------")
             for i in range(len(previous_session_batch)):
                 prev_session = previous_session_batch[i]
                 if prev_session[0] == 0:
@@ -334,7 +330,6 @@ class IIRNNDataHandler:
                     file.write(str(prev_session[j]) + ",")
                 file.write("\n")
                 for j in range(len(prev_session)):
-                    print(on_the_fly_attn_weights[i][j].data[0])
                     file.write(str(on_the_fly_attn_weights[i][j].data[0]) + ",")
                 file.write("\n\n\n\n")
                 file.close()
