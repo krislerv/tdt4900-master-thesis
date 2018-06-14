@@ -50,7 +50,7 @@ Test results are stored in `~/tdt4501-specialization-project/testlog/`.
 `LEARNING_RATE` is what you think it is.  
 `DROPOUT_RATE` is the probability to drop a random node. So setting this value to 0.0 is equivalent to not using dropout.  
 `MAX_SESSION_REPRESENTATIONS` defines the maximum number of recent session representations to consider.  
-`MAX_EPOCHS` defines the maximum number of training epochs before the program terminates. Results are saved after every epoch and you can choose to save model parameters as well to continue later.
+`MAX_EPOCHS` defines the maximum number of training epochs before the program terminates. Results are saved after every epoch and you can choose to save model parameters as well to continue later.  
 `N_LAYERS` defines the number of GRU-layers used.  
 `TOP_K` defines the number of items the model produces in each recommendation.  
 `use_hidden_state_attn` decides whether or not to use the hidden representation attention mechanism in the inter-session RNN.  
@@ -62,17 +62,16 @@ Test results are stored in `~/tdt4501-specialization-project/testlog/`.
 `use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.  
 `use_per_user_inter_attn` decides whether or not to use per-user linear layers for computing attention weights in the inter-session RNN.  
  
-`method_on_the_fly` decides which method to use when creating session representations.  
-`method_inter` decides which method to use when creating user representations.  
-`use_delta_t_attn` decides whether or not to use delta-t attention when creating user representations.  
+`use_intra_attn` decides whether or not to use attention mechanism in the intra-session RNN.  
+`intra_attn_method` decides the method of the intra attention mechanism.  
+`use_per_user_intra_attn` decides whether or not to use per-user linear layers for computing attention weights in the intra-session RNN.  
 
 `bidirectional` decides whether or not to use bidirectional RNNs.  
 
 #### Hierarchical attention specific parameters
-`use_hidden_state_attn` decides whether or not to use the hidden attention mechanism in the inter-session RNN.  
-`use_delta_t_attn` decides whether or not to use the delta-t attention mechanism in the inter-session RNN.  
-`use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.  
-`use_per_user_inter_attn` decides whether or not to use per-user linear layers for computing attention weights in the inter-session RNN.  
+`method_on_the_fly` decides which method to use when creating session representations.  
+`method_inter` decides which method to use when creating user representations.  
+`use_delta_t_attn` decides whether or not to use delta-t attention when creating user representations.  
 
 
   
