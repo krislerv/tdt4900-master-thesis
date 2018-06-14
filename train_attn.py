@@ -14,12 +14,18 @@ from torch.autograd import Variable
 
 from tensorboard import Logger as TensorBoard
 
-import gpustat
-
 # datasets
 reddit = "reddit-removed-low-low"
 lastfm = "lastfm-full"
 dataset = reddit
+
+# GPU settings
+use_cuda = True
+GPU_NO = 0  # Dont touch! change CUDA_VISIBLE_DEVICES INSTEAD
+
+# if experiencing "phantom" processes or that you can only resume training on GPU 0, set GPU_NO to 0 and set CUDA_VISIBLE_DEVICES to the gpu you want to use
+#CUDA_VISIBLE_DEVICES = "1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
 
 # which type of session representation to use. False: Average pooling, True: Last hidden state
 if dataset == lastfm:
@@ -37,31 +43,23 @@ use_week_time_attn = False
 use_per_user_inter_attn = False
 
 # Intra-session attention mechanisms
-use_intra_attn = True
+use_intra_attn = False
 intra_attn_method = "cat"   # options: cat, sum
-use_per_user_intra_attn = True # not used if use_intra_attn is False
+use_per_user_intra_attn = False # not used if use_intra_attn is False
 
 # logging of attention weights
 log_inter_attn = False
 log_intra_attn = False
 
-skip_early_testing = True
+skip_early_testing = True   # skips testing in the first few epochs to reduce total training time
 
 # saving/loading of model parameters
 save_model_parameters = True
-resume_model = True
+resume_model = False
 resume_model_name = "2018-06-06-21-47-36-testing-attn-rnn-reddit-removed-low-low-True-True"    # unused if resume_model is False
 
 if resume_model:
     skip_early_testing = False
-
-
-# GPU settings
-use_cuda = True
-GPU_NO = 0  # Dont touch! change CUDA_VISIBLE_DEVICES INSTEAD
-
-CUDA_VISIBLE_DEVICES = "1"
-#os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
 
 PID = str(os.getpid())
 
@@ -74,8 +72,8 @@ DATE_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
 TIME_NOW = datetime.datetime.fromtimestamp(time.time()).strftime('%H-%M-%S')
 if resume_model:
     RUN_NAME = resume_model_name
-else:   # pre 2018-03-06: Three boolean values were inter attn mechanisms, post: they are intra attn mechanisms
-    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-testing-attn-rnn-' + dataset + '-' + str(use_intra_attn) + '-' + str(use_per_user_intra_attn)
+else:
+    RUN_NAME = str(DATE_NOW) + '-' + str(TIME_NOW) + '-attn-rnn-' + dataset
 LOG_FILE = './testlog/' + RUN_NAME + '.txt'
 tensorboard = TensorBoard('./logs')
 
@@ -103,17 +101,10 @@ N_ITEMS      = -1
 BATCH_SIZE    = 100
 MAX_SESSION_REPRESENTATIONS = 15
 
-def show_memusage(device=1):
-    gpu_stats = gpustat.GPUStatCollection.new_query()
-    item = gpu_stats.jsonify()["gpus"][device]
-    print("{}/{}".format(item["memory.used"] - 10855, item["memory.total"]))
-
 # Load training data
 datahandler = IIRNNDataHandler(DATASET_PATH, BATCH_SIZE, LOG_FILE, MAX_SESSION_REPRESENTATIONS, INTER_INTERNAL_SIZE)
 N_ITEMS = datahandler.get_num_items()
 N_SESSIONS = datahandler.get_num_training_sessions()
-
-show_memusage()
 
 message = "------------------------------------------------------------------------\n"
 if use_last_hidden_state:
@@ -129,7 +120,7 @@ message += "\nN_LAYERS=" + str(N_LAYERS) + " EMBEDDING_SIZE=" + str(EMBEDDING_SI
 message += "\nN_SESSIONS=" + str(N_SESSIONS) + " SEED="+str(seed)
 message += "\nMAX_SESSION_REPRESENTATIONS=" + str(MAX_SESSION_REPRESENTATIONS)
 message += "\nDROPOUT_RATE=" + str(DROPOUT_RATE) + " LEARNING_RATE=" + str(LEARNING_RATE)
-message += "\nbidirectional=" + str(bidirectional) + " SEED=" + str(seed) + " PID=" + PID + " GPU_NO=" + str(GPU_NO) + " (" + CUDA_VISIBLE_DEVICES + ")"
+message += "\nbidirectional=" + str(bidirectional) + " SEED=" + str(seed) + " PID=" + PID + " GPU_NO=" + str(GPU_NO)
 print(message)
 
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)

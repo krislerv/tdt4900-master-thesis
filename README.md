@@ -1,6 +1,5 @@
 # tdt4501-specialization-project
 Code for my master project  
-Based on the code from https://github.com/olesls/master_thesis
 
 # Requirements
 Python 3  
@@ -13,15 +12,17 @@ Scipy
 # Usage
 
 ## Datasets
-You need to download one of the datasets (Sub-reddit or Last.fm).  
+You need to download one of the datasets (Reddit or Last.fm).  
 They can be found here:  
   
-[Sub-reddit](https://www.kaggle.com/colemaclean/subreddit-interactions)  
+[Reddit](https://www.kaggle.com/colemaclean/subreddit-interactions)  
 [Last.fm](http://www.dtic.upf.edu/~ocelma/MusicRecommendationDataset/lastfm-1K.html)  
   
 The code assumes that the datasets are located in:  
 `~/datasets/subreddit/`  
 `~/datasets/lastfm/`  
+And that the code is located in `~/<code>/`  
+
 But you can of course store them somewhere else and change the path in the code.  
   
 ## Preprocessing
@@ -30,12 +31,14 @@ preprocess.py converts the data of the two datasets above to a common data struc
 If `create_lastfm_cet` is True, a dataset will be created of the lastfm data containing only users in the CET timezone. This is to be used in models where the timezone of users is important.
 
 If `create_time_filtered_dataset` is True, a dataset will be created where only the first x months of each user's data is included. The `time_filter_months` variable decides how many months to include. Supported values are 1, 2 and 3.
+
+If `create_user_statistic_filtered_dataset` is True, a dataset will be created that filters out user that are not within the given thresholds for average session length and session count. If `remove_above_avg_session_length` is True, all users with above average session length will be removed. If it is False, all users with below average session length will be removed. Similar for `remove_above_avg_session_count`.
   
 After running preprocessing on a dataset, the resulting training and testing set are stored in a pickle file, `4_train_test_split.pickle`, in the same directory as the dataset.   
   
   
 # Running the RNN models
-`train_attn.py` is the file for the inter and intra attention models. The file for the hierarchical attention model is `train_attn_b.py` The baseline model is `train_inter.py`.   
+`train_attn.py` is the file for the inter and intra attention models. The file for the hierarchical attention model is `train_attn_h.py` The baseline model is `train_inter.py`.   
   
 Test results are stored in `~/tdt4501-specialization-project/testlog/`.  
   
@@ -51,9 +54,26 @@ Test results are stored in `~/tdt4501-specialization-project/testlog/`.
 `N_LAYERS` defines the number of GRU-layers used.  
 `TOP_K` defines the number of items the model produces in each recommendation.  
 `use_hidden_state_attn` decides whether or not to use the hidden representation attention mechanism in the inter-session RNN.  
+
+
+#### Attention specific parameters
+`use_hidden_state_attn` decides whether or not to use the hidden attention mechanism in the inter-session RNN.  
 `use_delta_t_attn` decides whether or not to use the delta-t attention mechanism in the inter-session RNN.  
 `use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.  
-`use_intra_attn` decides whether or not to use the intra attention mechanism.  
+`use_per_user_inter_attn` decides whether or not to use per-user linear layers for computing attention weights in the inter-session RNN.  
+ 
+`method_on_the_fly` decides which method to use when creating session representations.  
+`method_inter` decides which method to use when creating user representations.  
+`use_delta_t_attn` decides whether or not to use delta-t attention when creating user representations.  
+
+`bidirectional` decides whether or not to use bidirectional RNNs.  
+
+#### Hierarchical attention specific parameters
+`use_hidden_state_attn` decides whether or not to use the hidden attention mechanism in the inter-session RNN.  
+`use_delta_t_attn` decides whether or not to use the delta-t attention mechanism in the inter-session RNN.  
+`use_week_time_attn` decides whether or not to use the week-time attention mechanism in the inter-session RNN.  
+`use_per_user_inter_attn` decides whether or not to use per-user linear layers for computing attention weights in the inter-session RNN.  
+
 
   
 # Visualizing attention weights

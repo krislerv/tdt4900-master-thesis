@@ -345,4 +345,3 @@ def users_with_higher_than_average_session_lengths():
 
 avg_session_length()
 avg_session_count()
-#users_with_higher_than_average_session_lengths()

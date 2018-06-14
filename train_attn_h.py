@@ -2,8 +2,8 @@ import datetime
 import os
 import time
 import numpy as np
-from models_attn_b import InterRNN, IntraRNN, Embed, OnTheFlySessionRepresentations
-from datahandler_attn_b import IIRNNDataHandler
+from models_attn_h import InterRNN, IntraRNN, Embed, OnTheFlySessionRepresentations
+from datahandler_attn_h import IIRNNDataHandler
 from test_util_h import Tester
 
 import torch
@@ -25,14 +25,14 @@ dataset = reddit
 use_cuda = True
 GPU_NO = 0  # Dont touch! change CUDA_VISIBLE_DEVICES instead
 
-CUDA_VISIBLE_DEVICES = "1"
-
-os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
+# if experiencing "phantom" processes or that you can only resume training on GPU 0, set GPU_NO to 0 and set CUDA_VISIBLE_DEVICES to the gpu you want to use
+#CUDA_VISIBLE_DEVICES = "1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = CUDA_VISIBLE_DEVICES
 
 PID = str(os.getpid())
 
-method_on_the_fly = "ATTN-G"  # AVG, LHS, ATTN-G, ATTN-L
-method_inter = "ATTN-G"
+method_on_the_fly = "AVG" # method to use when creating session representations      # AVG, LHS, ATTN-G, ATTN-L
+method_inter = "LHS"      # method to use to create user representations
 use_delta_t_attn = False
 bidirectional = False
 attention_on = "output" # input, output
@@ -41,7 +41,7 @@ attention_on = "output" # input, output
 log_on_the_fly_attn = False
 log_inter_attn = False
 
-skip_early_testing = True
+skip_early_testing = True   # skips testing in the first few epochs to reduce total training time
 
 # saving/loading of model parameters
 save_model_parameters = True
@@ -50,7 +50,6 @@ resume_model_name = "2018-06-09-00-33-54-hierarchical-subreddit"    # unused if 
 
 if resume_model:
     skip_early_testing = False
-
 
 # dataset path
 HOME = ".."
@@ -110,11 +109,6 @@ if resume_model:
     message += "\nresume_model: " + resume_model_name
 print(message)
 
-def show_memusage(device=0):
-    gpu_stats = gpustat.GPUStatCollection.new_query()
-    item = gpu_stats.jsonify()["gpus"][device]
-    print("{}/{}".format(item["memory.used"], item["memory.total"]))
-
 embed = Embed(N_ITEMS, EMBEDDING_SIZE)
 if use_cuda:
     embed = embed.cuda(GPU_NO)
@@ -159,7 +153,6 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
     session_lengths = Variable(torch.LongTensor(session_lengths).view(-1, 1)) # by reshaping the length to this, it can be broadcasted and used for division.
     session_reps = Variable(torch.FloatTensor(session_reps))
     inter_session_seq_length = Variable(torch.LongTensor(inter_session_seq_length))
-    #user_list = Variable(torch.LongTensor((user_list).tolist()))
     previous_session_batch = Variable(torch.LongTensor(previous_session_batch))
     previous_session_lengths = Variable(torch.LongTensor(previous_session_lengths))
     prevoius_session_counts = Variable(torch.LongTensor(prevoius_session_counts))
@@ -172,7 +165,6 @@ def run(input, target, session_lengths, session_reps, inter_session_seq_length, 
         session_lengths = session_lengths.cuda(GPU_NO)
         session_reps = session_reps.cuda(GPU_NO)
         inter_session_seq_length = inter_session_seq_length.cuda(GPU_NO)
-        #user_list = user_list.cuda(GPU_NO)
         previous_session_batch = previous_session_batch.cuda(GPU_NO)
         previous_session_lengths = previous_session_lengths.cuda(GPU_NO)
         prevoius_session_counts = prevoius_session_counts.cuda(GPU_NO)

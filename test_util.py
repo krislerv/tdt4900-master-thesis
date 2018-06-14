@@ -15,15 +15,6 @@ class Tester:
         self.correct_predictions_per_user = [0]*self.num_users
         self.total_predictions_per_user = [0]*self.num_users
 
-        self.correct_predictions_per_session_length = [0]*30
-        self.total_predictions_per_session_length = [0]*30
-
-        self.avg_recall_bucket = [0] * 169
-        self.avg_total_bucket = [0] * 169
-
-        self.std_recall_bucket = [0] * 169
-        self.std_total_bucket = [0] * 169
-
     def get_rank(self, target, predictions):
         for i in range(len(predictions)):
             if target == predictions[i]:
@@ -43,8 +34,6 @@ class Tester:
                     inv_rank = 1.0/self.get_rank(target_item, k_predictions[:k].data)
                     self.mrr[i][j] += inv_rank
             self.i_count[i] += 1
-        self.total_predictions_per_session_length[seq_len] += seq_len
-
 
     def evaluate_batch(self, predictions, targets, sequence_lengths, user_list):
         for batch_index in range(len(predictions)):
@@ -84,27 +73,7 @@ class Tester:
         recall5 = recall_k[0]
         recall20 = recall_k[2]
 
-        """
-        per_user_accuracies = []
-        for i in range(self.num_users):
-            if self.total_predictions_per_user[i] == 0:
-                per_user_accuracies.append(0)
-            else:
-                per_user_accuracies.append(self.correct_predictions_per_user[i] / self.total_predictions_per_user[i])
-
-        per_session_length_accuracies = []
-        for i in range(self.session_length):
-            if self.total_predictions_per_session_length[i] == 0:
-                per_session_length_accuracies.append(0)
-            else:
-                per_session_length_accuracies.append(self.correct_predictions_per_session_length[i] / self.total_predictions_per_session_length[i])
-        """
-
-        print(self.avg_recall_bucket, self.avg_total_bucket)
-        print()
-        print(self.std_recall_bucket, self.std_total_bucket)
-
-        return score_message, recall5, recall20#, per_user_accuracies, per_session_length_accuracies
+        return score_message, recall5, recall20
 
     def get_stats_and_reset(self):
         message = self.get_stats()

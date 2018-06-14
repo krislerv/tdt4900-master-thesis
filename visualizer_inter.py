@@ -46,22 +46,15 @@ class Visualizer(GridLayout):
         for line in artist_name_map:
             line = line.split(" ")
             artists[line[0].strip()] = " ".join(line[1:]).strip()
-        #print(artists)
 
         for line in remap:
             line = line.split(" ")
             artists_remap[line[1].strip()] = artists[line[0]]
 
-        #print(artists_remap)
-
         attn_weight_values = attn_weights.readline().split(",")
-
         attn_weight_values = list(reversed(attn_weight_values))
-
         attn_weights.readline()
-
         input_timestamp = attn_weights.readline()
-
         attn_weights.readline()
 
         session_timestamps = []
@@ -97,7 +90,6 @@ class Visualizer(GridLayout):
                         if len(l) > 9:
                             l = l[:6] + "..."
                         string += l + "\n"
-                print(string)
                 self.add_widget(Label(text=string, font_size='10sp'))
             for i in range(15):
                 label = MyLabel(

@@ -4,7 +4,7 @@ import os
 import time
 
 runtime = time.time()
-reddit = "reddit-removed-high-high"
+reddit = "reddit-removed-high-high"     # the name of the dataset you want to create, make sure the folder exists
 lastfm = "lastfm-removed-high-high"
 
 dataset = reddit

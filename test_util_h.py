@@ -73,8 +73,6 @@ class Tester:
         mrr10 = mrr_k[1]
         mrr20 = mrr_k[2]
 
-
-
         return score_message, recall5, recall10, recall20, mrr5, mrr10, mrr20
 
     def get_stats_and_reset(self):
