@@ -1,4 +1,4 @@
-# tdt4501-specialization-project
+# tdt4900-master-thesis
 Code for my master project  
 
 # Requirements
